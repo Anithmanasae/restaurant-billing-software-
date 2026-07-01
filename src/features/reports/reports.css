@@ -1,0 +1,392 @@
+/* SADA POS — Reports / Insights. Theme tokens only, mobile-first ~480px. */
+
+.reports {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+.reports__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.reports__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.reports__subtitle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+/* Segmented control ------------------------------------------------------- */
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-md);
+}
+
+.segmented__btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+}
+
+.segmented__btn.is-active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-card);
+}
+
+/* Range selector ---------------------------------------------------------- */
+.reports__range {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: flex-start;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-card);
+}
+
+.reports__range-icon {
+  font-size: 0.9rem;
+}
+
+.reports__range-select {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding-right: var(--space-2);
+}
+
+/* Notices ----------------------------------------------------------------- */
+.reports__notice {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+.reports__notice--error {
+  background: var(--color-primary-soft);
+  color: var(--color-danger);
+}
+
+/* Cards ------------------------------------------------------------------- */
+.card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.card__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.card__empty {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.link-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  font-weight: 600;
+  font-size: 0.875rem;
+  cursor: pointer;
+  font-family: inherit;
+  padding: 0;
+}
+
+/* KPI grid ---------------------------------------------------------------- */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.kpi-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.kpi-card__label {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.kpi-card__value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.kpi-pill {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.kpi-pill__arrow {
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.kpi-pill--good {
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.kpi-pill--bad {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+}
+
+.kpi-pill--neutral {
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+}
+
+/* Revenue chart ----------------------------------------------------------- */
+.revenue-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.revenue-chart__line {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.revenue-chart__area {
+  stroke: none;
+}
+
+.revenue-chart__fill-top {
+  stop-color: var(--color-primary);
+  stop-opacity: 0.28;
+}
+
+.revenue-chart__fill-bottom {
+  stop-color: var(--color-primary);
+  stop-opacity: 0.02;
+}
+
+.revenue-chart__dot {
+  fill: var(--color-primary);
+}
+
+.revenue-chart__label {
+  fill: var(--color-text-muted);
+  font-size: 9px;
+  font-family: var(--font-sans);
+}
+
+.chart-empty {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  text-align: center;
+  padding: var(--space-5) 0;
+}
+
+/* Ranked rows (top items, sources) ---------------------------------------- */
+.rank-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rank-list--ordered {
+  counter-reset: rank;
+}
+
+.rank-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.rank-row:last-child {
+  border-bottom: none;
+}
+
+.rank-list--ordered .rank-row {
+  counter-increment: rank;
+}
+
+.rank-list--ordered .rank-row::before {
+  content: counter(rank);
+  width: 22px;
+  height: 22px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.rank-row__icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  font-size: 1rem;
+}
+
+.rank-row__name {
+  flex: 1 1 auto;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.rank-row__qty {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.rank-row__money {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--color-primary);
+}
+
+/* Stat + report tables ---------------------------------------------------- */
+.stat-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.stat-row:last-child {
+  border-bottom: none;
+}
+
+.stat-row dt {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.stat-row dd {
+  margin: 0;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.stat-row--total {
+  border-top: 2px solid var(--color-border-strong);
+  border-bottom: none;
+}
+
+.stat-row--total dt,
+.stat-row--total dd {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.report-table th {
+  text-align: left;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.report-table td {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.report-table tr:last-child td {
+  border-bottom: none;
+}
+
+.report-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
