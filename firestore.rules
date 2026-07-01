@@ -133,6 +133,16 @@ service cloud.firestore {
         allow delete: if isAdmin();
       }
 
+      // ---- counters (KOT ticket #, bill #) ------------------------------
+      // Sequential human-facing numbers, incremented in a transaction by
+      // floor/cashier staff. Value must be a non-negative int.
+      match /counters/{name} {
+        allow read: if signedIn();
+        allow write: if hasAnyRole(['admin', 'waiter', 'cashier'])
+          && request.resource.data.value is int
+          && request.resource.data.value >= 0;
+      }
+
       // ---- daily summaries (reports) ------------------------------------
       // Readable by admin/cashier. Written by the client on payment; guarded
       // so only cashier/admin can mutate aggregates.

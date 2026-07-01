@@ -57,4 +57,8 @@ export const paths = {
 
   dailySummaries: () => col<DailySummary>("dailySummaries"),
   dailySummary: (date: string) => ref<DailySummary>("dailySummaries", date),
+
+  /** Monotonic counters (e.g. "kotTicket", "billNumber") for human-facing
+   *  sequence numbers. Increment inside a runTransaction. */
+  counter: (name: string) => ref<{ value: number }>("counters", name),
 };
