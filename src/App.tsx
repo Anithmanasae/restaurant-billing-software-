@@ -3,6 +3,9 @@ import { LoginPage, RoleHomeRedirect } from "./features/auth/LoginPage";
 import { ProtectedRoute } from "./features/auth/ProtectedRoute";
 import { ROLE_ACCESS } from "./features/auth/roleRoutes";
 import { ModulePlaceholder } from "./components/ModulePlaceholder";
+import { MenuManagementScreen } from "./features/menu";
+import { TablesScreen } from "./features/tables";
+import { KitchenDisplayScreen } from "./features/kitchen";
 
 /**
  * Top-level route table. Each module lives behind a ProtectedRoute scoped to
@@ -20,7 +23,7 @@ export default function App() {
         path="/menu"
         element={
           <ProtectedRoute allow={ROLE_ACCESS.menuAdmin}>
-            <ModulePlaceholder title="Menu Management" />
+            <MenuManagementScreen />
           </ProtectedRoute>
         }
       />
@@ -30,7 +33,7 @@ export default function App() {
         path="/tables"
         element={
           <ProtectedRoute allow={ROLE_ACCESS.tables}>
-            <ModulePlaceholder title="Tables" />
+            <TablesScreen />
           </ProtectedRoute>
         }
       />
@@ -50,7 +53,7 @@ export default function App() {
         path="/kds"
         element={
           <ProtectedRoute allow={ROLE_ACCESS.kds}>
-            <ModulePlaceholder title="Kitchen Display" />
+            <KitchenDisplayScreen />
           </ProtectedRoute>
         }
       />
