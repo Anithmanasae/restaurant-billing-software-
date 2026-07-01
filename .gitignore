@@ -18,6 +18,9 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 
+# agent worktrees (created by the Claude Code harness)
+.claude/worktrees/
+
 # editor / os
 .vscode/*
 !.vscode/extensions.json
