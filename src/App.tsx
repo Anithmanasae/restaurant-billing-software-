@@ -6,6 +6,7 @@ import { ModulePlaceholder } from "./components/ModulePlaceholder";
 import { MenuManagementScreen } from "./features/menu";
 import { TablesScreen } from "./features/tables";
 import { KitchenDisplayScreen } from "./features/kitchen";
+import { OrderScreen } from "./features/order";
 
 /**
  * Top-level route table. Each module lives behind a ProtectedRoute scoped to
@@ -43,7 +44,7 @@ export default function App() {
         path="/order/:tableId?"
         element={
           <ProtectedRoute allow={ROLE_ACCESS.order}>
-            <ModulePlaceholder title="New Order" />
+            <OrderScreen />
           </ProtectedRoute>
         }
       />
