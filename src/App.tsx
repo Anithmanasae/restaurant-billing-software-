@@ -7,6 +7,7 @@ import { MenuManagementScreen } from "./features/menu";
 import { TablesScreen } from "./features/tables";
 import { KitchenDisplayScreen } from "./features/kitchen";
 import { OrderScreen } from "./features/order";
+import { CashierScreen } from "./features/cashier";
 
 /**
  * Top-level route table. Each module lives behind a ProtectedRoute scoped to
@@ -64,7 +65,7 @@ export default function App() {
         path="/bills"
         element={
           <ProtectedRoute allow={ROLE_ACCESS.bills}>
-            <ModulePlaceholder title="Bills" />
+            <CashierScreen />
           </ProtectedRoute>
         }
       />

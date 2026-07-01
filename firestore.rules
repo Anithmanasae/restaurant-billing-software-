@@ -110,25 +110,37 @@ service cloud.firestore {
       match /bills/{billId} {
         allow read: if signedIn();
 
-        // Waiter requests the bill (status must start as 'requested', unpaid).
-        allow create: if hasAnyRole(['admin', 'waiter', 'cashier'])
-          && request.resource.data.status == 'requested'
-          && request.resource.data.grandTotal is int
-          && request.resource.data.grandTotal >= 0
-          && request.resource.data.discountPercent >= 0
-          && request.resource.data.discountPercent <= 100;
-
-        // Only cashier/admin finalize, discount, and settle.
-        // Once paid or void, the bill is frozen.
-        allow update: if hasAnyRole(['admin', 'cashier'])
-          && resource.data.status != 'paid'
-          && resource.data.status != 'void'
-          && request.resource.data.grandTotal is int
+        // A waiter may only REQUEST a bill. Cashier/admin may also open it
+        // straight to 'finalized'. New bills are never created already paid.
+        allow create: if request.resource.data.grandTotal is int
           && request.resource.data.grandTotal >= 0
           && request.resource.data.discountPercent >= 0
           && request.resource.data.discountPercent <= 100
           && request.resource.data.gstTotal ==
-             request.resource.data.cgst + request.resource.data.sgst;
+             request.resource.data.cgst + request.resource.data.sgst
+          && (
+            (hasRole('waiter') && request.resource.data.status == 'requested')
+            || (hasAnyRole(['admin', 'cashier'])
+                && request.resource.data.status in ['requested', 'finalized'])
+          );
+
+        // Only cashier/admin finalize, discount, and settle. Once paid or
+        // void the bill is frozen — EXCEPT a reprint may bump printedCount.
+        allow update: if hasAnyRole(['admin', 'cashier'])
+          && (
+            // reprint: printedCount-only change, allowed in any status
+            incomingDiffers(['printedCount'])
+            || (
+              resource.data.status != 'paid'
+              && resource.data.status != 'void'
+              && request.resource.data.grandTotal is int
+              && request.resource.data.grandTotal >= 0
+              && request.resource.data.discountPercent >= 0
+              && request.resource.data.discountPercent <= 100
+              && request.resource.data.gstTotal ==
+                 request.resource.data.cgst + request.resource.data.sgst
+            )
+          );
 
         allow delete: if isAdmin();
       }
