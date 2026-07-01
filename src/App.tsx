@@ -2,12 +2,12 @@ import { Routes, Route } from "react-router-dom";
 import { LoginPage, RoleHomeRedirect } from "./features/auth/LoginPage";
 import { ProtectedRoute } from "./features/auth/ProtectedRoute";
 import { ROLE_ACCESS } from "./features/auth/roleRoutes";
-import { ModulePlaceholder } from "./components/ModulePlaceholder";
 import { MenuManagementScreen } from "./features/menu";
 import { TablesScreen } from "./features/tables";
 import { KitchenDisplayScreen } from "./features/kitchen";
 import { OrderScreen } from "./features/order";
 import { CashierScreen } from "./features/cashier";
+import { InsightsScreen } from "./features/reports";
 
 /**
  * Top-level route table. Each module lives behind a ProtectedRoute scoped to
@@ -75,7 +75,7 @@ export default function App() {
         path="/insights"
         element={
           <ProtectedRoute allow={ROLE_ACCESS.insights}>
-            <ModulePlaceholder title="Insights" />
+            <InsightsScreen />
           </ProtectedRoute>
         }
       />
