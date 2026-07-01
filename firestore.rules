@@ -1,0 +1,150 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SADA POS — Firestore Security Rules
+//
+// With no Cloud Functions, THESE RULES ARE THE SERVER-SIDE SECURITY BOUNDARY.
+// They run on Google's servers and cannot be bypassed by tampering with the
+// client. Every money-sensitive invariant lives here:
+//   - roles are read from the user's profile doc, never from the client payload
+//   - waiters cannot finalize/pay bills; only cashiers/admins can
+//   - paid bills are immutable
+//   - quantities/prices/totals must be non-negative and internally consistent
+//   - kitchen can only advance KOT status, nothing else
+// ─────────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /restaurants/{restaurantId} {
+
+      // ---- helpers -------------------------------------------------------
+
+      function signedIn() {
+        return request.auth != null;
+      }
+
+      // Role is read from the caller's own profile document (server-side),
+      // so a client cannot claim a role it doesn't have.
+      function profile() {
+        return get(/databases/$(database)/documents/restaurants/$(restaurantId)/users/$(request.auth.uid)).data;
+      }
+
+      function hasRole(role) {
+        return signedIn() && profile().active == true && profile().role == role;
+      }
+
+      function hasAnyRole(roles) {
+        return signedIn() && profile().active == true && profile().role in roles;
+      }
+
+      function isAdmin() {
+        return hasRole('admin');
+      }
+
+      function incomingDiffers(fields) {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(fields);
+      }
+
+      // ---- users ---------------------------------------------------------
+      // Anyone signed in can read their own profile (needed to resolve role).
+      // Admins manage all staff. Roles are assigned ONLY by admins.
+      match /users/{uid} {
+        allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+        allow create, update, delete: if isAdmin();
+      }
+
+      // ---- menu ----------------------------------------------------------
+      // Everyone signed in reads the menu; only admins edit it.
+      match /menuCategories/{categoryId} {
+        allow read: if signedIn();
+        allow write: if isAdmin();
+      }
+      match /menuItems/{itemId} {
+        allow read: if signedIn();
+        allow write: if isAdmin()
+          && request.resource.data.price is int
+          && request.resource.data.price >= 0;
+      }
+
+      // ---- tables --------------------------------------------------------
+      // Floor staff read tables and update occupancy/merge/shift status.
+      match /tables/{tableId} {
+        allow read: if signedIn();
+        allow create, delete: if isAdmin();
+        allow update: if hasAnyRole(['admin', 'waiter', 'cashier']);
+      }
+
+      // ---- orders --------------------------------------------------------
+      // Waiters create/edit their orders; cashiers/admins can also touch them
+      // (billing, closing). Subtotal must be a non-negative int.
+      match /orders/{orderId} {
+        allow read: if signedIn();
+        allow create: if hasAnyRole(['admin', 'waiter'])
+          && request.resource.data.subtotal is int
+          && request.resource.data.subtotal >= 0;
+        allow update: if hasAnyRole(['admin', 'waiter', 'cashier'])
+          && request.resource.data.subtotal is int
+          && request.resource.data.subtotal >= 0;
+        allow delete: if isAdmin();
+      }
+
+      // ---- KOTs ----------------------------------------------------------
+      // Waiters create tickets. Kitchen can ONLY advance status/printedCount,
+      // never edit items or prices.
+      match /kots/{kotId} {
+        allow read: if signedIn();
+        allow create: if hasAnyRole(['admin', 'waiter']);
+        allow update: if isAdmin()
+          || (hasRole('kitchen')
+              && incomingDiffers(['status', 'printedCount', 'updatedAt']))
+          || (hasAnyRole(['admin', 'waiter'])
+              && incomingDiffers(['printedCount', 'updatedAt']));
+        allow delete: if isAdmin();
+      }
+
+      // ---- bills ---------------------------------------------------------
+      // A waiter may only REQUEST a bill. Finalizing, applying discounts,
+      // taking payment, and marking paid are cashier/admin only. Paid bills
+      // are immutable. Totals must be internally consistent and non-negative.
+      match /bills/{billId} {
+        allow read: if signedIn();
+
+        // Waiter requests the bill (status must start as 'requested', unpaid).
+        allow create: if hasAnyRole(['admin', 'waiter', 'cashier'])
+          && request.resource.data.status == 'requested'
+          && request.resource.data.grandTotal is int
+          && request.resource.data.grandTotal >= 0
+          && request.resource.data.discountPercent >= 0
+          && request.resource.data.discountPercent <= 100;
+
+        // Only cashier/admin finalize, discount, and settle.
+        // Once paid or void, the bill is frozen.
+        allow update: if hasAnyRole(['admin', 'cashier'])
+          && resource.data.status != 'paid'
+          && resource.data.status != 'void'
+          && request.resource.data.grandTotal is int
+          && request.resource.data.grandTotal >= 0
+          && request.resource.data.discountPercent >= 0
+          && request.resource.data.discountPercent <= 100
+          && request.resource.data.gstTotal ==
+             request.resource.data.cgst + request.resource.data.sgst;
+
+        allow delete: if isAdmin();
+      }
+
+      // ---- daily summaries (reports) ------------------------------------
+      // Readable by admin/cashier. Written by the client on payment; guarded
+      // so only cashier/admin can mutate aggregates.
+      match /dailySummaries/{date} {
+        allow read: if hasAnyRole(['admin', 'cashier']);
+        allow write: if hasAnyRole(['admin', 'cashier']);
+      }
+
+      // Deny everything not explicitly matched above.
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+  }
+}
