@@ -48,10 +48,17 @@ service cloud.firestore {
 
       // ---- users ---------------------------------------------------------
       // Anyone signed in can read their own profile (needed to resolve role).
-      // Admins manage all staff. Roles are assigned ONLY by admins.
+      // Admins manage all staff. Self-signup: a user may create their OWN
+      // profile once (open registration — restrict this before production,
+      // e.g. require an admin-issued invite or force role to 'waiter').
       match /users/{uid} {
         allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
-        allow create, update, delete: if isAdmin();
+        allow create: if isAdmin()
+          || (signedIn()
+              && request.auth.uid == uid
+              && request.resource.data.role in ['admin', 'waiter', 'cashier', 'kitchen']
+              && request.resource.data.active == true);
+        allow update, delete: if isAdmin();
       }
 
       // ---- menu ----------------------------------------------------------

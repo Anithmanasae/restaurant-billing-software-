@@ -14,12 +14,13 @@ import {
   type ReactNode,
 } from "react";
 import {
+  createUserWithEmailAndPassword,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut as fbSignOut,
   type User,
 } from "firebase/auth";
-import { getDoc } from "firebase/firestore";
+import { getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth } from "@/lib/firebase";
 import { paths } from "@/lib/firestore/paths";
 import type { AppUser, Role } from "@/types/models";
@@ -30,6 +31,12 @@ interface AuthState {
   role: Role | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signUp: (
+    name: string,
+    email: string,
+    password: string,
+    role: Role
+  ) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -71,6 +78,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     signIn: async (email, password) => {
       await signInWithEmailAndPassword(auth, email, password);
+    },
+    signUp: async (name, email, password, role) => {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const newProfile: Omit<AppUser, "uid"> = {
+        name,
+        email,
+        role,
+        active: true,
+        createdAt: serverTimestamp() as unknown as AppUser["createdAt"],
+      };
+      await setDoc(paths.user(cred.user.uid), {
+        ...newProfile,
+        uid: cred.user.uid,
+      });
+      // The auth listener may have read the profile before the doc existed —
+      // set it explicitly so the new user lands in the app immediately.
+      setProfile({ ...newProfile, uid: cred.user.uid });
     },
     signOut: async () => {
       await fbSignOut(auth);
