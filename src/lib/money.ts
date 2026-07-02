@@ -19,13 +19,29 @@ export function rupeesToPaise(rupees: number): number {
   return roundPaise(rupees * 100);
 }
 
-/** 8500 paise -> "₹85.00" */
+/**
+ * 8500 paise -> "₹85.00". Uses Indian digit grouping (e.g. ₹1,23,456.00)
+ * implemented manually so it doesn't depend on Intl/Hermes locale data.
+ */
 export function formatMoney(paise: number): string {
-  const rupees = paise / 100;
-  return `${TAX_CONFIG.currencySymbol}${rupees.toLocaleString(TAX_CONFIG.locale, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
+  const negative = paise < 0;
+  const abs = Math.abs(paise);
+  const rupees = Math.floor(abs / 100);
+  const paisePart = (abs % 100).toString().padStart(2, "0");
+
+  const digits = rupees.toString();
+  let grouped: string;
+  if (digits.length <= 3) {
+    grouped = digits;
+  } else {
+    const last3 = digits.slice(-3);
+    const rest = digits.slice(0, -3);
+    // group the remaining digits in pairs (Indian numbering system)
+    const withCommas = rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",");
+    grouped = `${withCommas},${last3}`;
+  }
+
+  return `${negative ? "-" : ""}${TAX_CONFIG.currencySymbol}${grouped}.${paisePart}`;
 }
 
 export interface BillLine {

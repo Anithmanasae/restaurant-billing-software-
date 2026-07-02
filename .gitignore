@@ -1,11 +1,19 @@
 # dependencies
 node_modules/
 
-# build
+# expo
+.expo/
 dist/
-dist-ssr/
-*.local
-*.tsbuildinfo
+web-build/
+expo-env.d.ts
+
+# native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
 
 # env / secrets
 .env
@@ -18,12 +26,13 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 
-# agent worktrees (created by the Claude Code harness)
-.claude/worktrees/
-
 # editor / os
 .vscode/*
 !.vscode/extensions.json
 .idea/
 .DS_Store
 *.log
+*.tsbuildinfo
+
+# metro
+.metro-health-check*

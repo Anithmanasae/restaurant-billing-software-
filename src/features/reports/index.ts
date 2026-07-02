@@ -1,1 +1,0 @@
-export { InsightsScreen } from "./InsightsScreen";

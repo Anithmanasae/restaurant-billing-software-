@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "SADA POS",
+    "slug": "sada-pos",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "sadapos",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0f7a5a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sada.pos"
+    },
+    "android": {
+      "package": "com.sada.pos",
+      "adaptiveIcon": {
+        "backgroundColor": "#0f7a5a"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow SADA POS to access your photos to set menu item images."
+        }
+      ]
+    ]
+  }
+}

@@ -70,11 +70,14 @@ export async function deleteMenuItem(id: string): Promise<void> {
  */
 export async function uploadMenuItemImage(
   itemId: string,
-  file: File
+  blob: Blob,
+  fileName = `${Date.now()}.jpg`
 ): Promise<string> {
-  const path = `restaurants/${RESTAURANT_ID}/menu/${itemId}/${file.name}`;
+  // In React Native the caller turns a local image uri into a Blob first:
+  //   const blob = await (await fetch(uri)).blob();
+  const path = `restaurants/${RESTAURANT_ID}/menu/${itemId}/${fileName}`;
   const objectRef = storageRef(storage, path);
-  await uploadBytes(objectRef, file);
+  await uploadBytes(objectRef, blob);
   const url = await getDownloadURL(objectRef);
   await updateMenuItem(itemId, { imageUrl: url });
   return url;

@@ -1,70 +1,90 @@
-# SADA POS — Engineering Conventions
+# SADA POS — Engineering Conventions (React Native + Expo)
 
-**Read this before touching any code.** Every module must follow these so the
-app stays consistent even though modules are built by separate agents.
+**Read this before touching any code.** The app is **React Native via Expo**
+(managed workflow, runs in **Expo Go**), routed with **expo-router**. It was
+ported from an earlier web build: the entire logic/backend layer is reused; the
+screens are being rebuilt in React Native.
 
 ## Stack
 
-- React 18 + TypeScript + Vite. Routing via `react-router-dom` v6.
-- Firebase: Auth + Firestore (real-time) + Storage. **No Cloud Functions** —
-  all logic runs client-side, guarded by `firestore.rules`.
-- No component library. Plain CSS with the tokens in `src/styles/theme.css`.
+- Expo SDK 52, React Native 0.76, React 18.3, TypeScript (strict).
+- Routing: **expo-router** (file-based, in `app/`).
+- Firebase **JS SDK** (`firebase`) — NOT `@react-native-firebase` — so it runs
+  in Expo Go. Auth uses AsyncStorage persistence (already set up).
+- No UI kit. Styling with `StyleSheet.create` + tokens in `src/theme/theme.ts`.
 
 ## Golden rules
 
-1. **Never talk to Firestore directly from a component.** Use `paths` from
-   `src/lib/firestore/paths.ts` and the hooks in `src/lib/firestore/useRealtime.ts`.
+1. **Never talk to Firestore directly from a screen.** Use `paths` from
+   `src/lib/firestore/paths.ts` and the realtime hooks in
+   `src/lib/firestore/useRealtime.ts` (or a feature's `use*Data.ts`).
 2. **Never redefine data shapes.** Import from `src/types/models.ts`.
-3. **Never do money math inline.** Use `computeBill` / `formatMoney` from
-   `src/lib/money.ts`. All money is stored as integer **paise**.
-4. **Never hardcode colors, spacing, or radii.** Use CSS variables from
-   `theme.css`. Currency symbol is `₹` (INR), locale `en-IN`.
-5. **Real-time by default.** Screens that show live data subscribe via the
-   realtime hooks — never poll, never one-shot `getDocs` for live views.
+3. **Never do money math inline.** Use `computeBill` / `formatMoney` /
+   `rupeesToPaise` from `src/lib/money.ts`. Money is integer **paise**.
+4. **Never hardcode colors, spacing, or radii.** Import `colors`, `space`,
+   `radius`, `shadow`, `currency` from `src/theme/theme.ts`.
+5. **Real-time by default.** Live screens subscribe via the realtime hooks —
+   never poll, never a one-shot `getDocs` for a live view.
 6. **Role checks** for UX come from `useAuth()`; the real enforcement is in
-   `firestore.rules`. If you add a write, add/verify the matching rule.
+   `firestore.rules`. If you add a write, verify a matching rule exists.
+
+## React Native specifics (do NOT use web APIs)
+
+- Use RN primitives: `View`, `Text`, `ScrollView`, `FlatList`, `Pressable`,
+  `TextInput`, `Image`. NO `div`/`button`/`input`/`img`, NO CSS/className, NO
+  `window`/`document`.
+- Lists: prefer `FlatList`/`SectionList` for anything scrollable+dynamic.
+- Images: use `expo-image`'s `Image` (`import { Image } from "expo-image"`).
+- Menu image upload: pick with `expo-image-picker`, convert the local uri to a
+  Blob (`const blob = await (await fetch(uri)).blob()`), pass to
+  `uploadMenuItemImage(itemId, blob)`.
+- IDs: use `randomUUID` from `expo-crypto` (already used in orderApi).
+- Navigation: `import { router } from "expo-router"` then `router.push("/order/" + tableId)`;
+  read params with `useLocalSearchParams`.
+- Safe areas: wrap screen content with `useSafeAreaInsets` or
+  `SafeAreaView` from `react-native-safe-area-context`.
 
 ## Folder structure
 
 ```
+app/                      # expo-router routes (thin — render feature screens)
+  _layout.tsx             # root: AuthProvider + Stack  (DONE)
+  index.tsx               # role redirect               (DONE)
+  login.tsx               # RN login                    (DONE)
+  (app)/_layout.tsx       # auth guard + Stack          (DONE)
+  (app)/{menu,tables,kds,bills,insights}.tsx
+  (app)/order/{index,[tableId]}.tsx
 src/
-  App.tsx                 # route table (roles -> modules)
-  main.tsx                # providers + router
-  components/             # shared UI (buttons, nav, cards)
+  theme/theme.ts          # design tokens (colors/space/radius)
   config/tax.ts           # GST config
-  features/
-    auth/                 # DONE — login, roles, guards
-    tables/               # BG agent
-    menu/                 # BG agent
-    order/                # BG agent (waiter + KOT)
-    kitchen/              # BG agent (KDS)
-    cashier/              # BG agent (bills)
-    reports/              # BG agent (insights)
-  lib/
-    firebase.ts           # SDK init (do not re-init)
-    firestore/            # paths + realtime hooks
-    money.ts              # bill math
-  styles/                 # theme + global css
   types/models.ts         # canonical data model
+  lib/firebase.ts         # SDK init (RN persistence) — do not re-init
+  lib/firestore/          # paths + realtime hooks
+  lib/money.ts, lib/date.ts
+  features/
+    auth/                 # AuthContext, roleRoutes      (DONE)
+    menu/  tables/  order/  kitchen/  cashier/  reports/
+      *Api.ts, use*Data.ts   # PORTED — reuse, do not rewrite
+      <Screen>.tsx           # REBUILD in RN
+      index.ts               # export the screen
 ```
 
-Each feature folder owns: its screens, a `*.css`, and its own Firestore
-read/write helpers built on top of `paths`/realtime hooks (e.g.
-`features/tables/tablesApi.ts`).
+Route files in `app/(app)/` should stay thin and render the feature screen,
+e.g. `export default function MenuRoute(){ return <MenuManagementScreen/> }`.
+The wiring is done by the integrator (the parent), not the screen agents —
+build and export your screen from `src/features/<x>/index.ts`.
 
-## UI conventions (from the mockups — see `/design`)
+## Design specs
 
-- Mobile-first, ~480px max width, white cards on `--color-bg` canvas.
-- Bottom tab nav. Two variants: staff (Home/Menu/KDS/Insights) and cashier
-  (Tables/Bills/Sales/Items/More). Active tab uses `--color-primary` + soft bg.
-- Cards: `--radius-lg`, `--shadow-card`, `--space-4` padding.
-- Primary actions: solid green (`--color-primary`) full-width buttons.
-- Money always via `formatMoney`; show 2 decimals.
+`design/*.md` describe each screen's **layout, behavior, and data** (written for
+the web build). Honor the layout/behavior/data; **translate the DOM/CSS details
+into RN primitives + theme tokens**. Keep the SADA look: white cards on the gray
+canvas, green primary, rounded corners, mobile-first.
 
-## Definition of done for a module
+## Definition of done for a screen
 
-- TypeScript compiles (`npm run build`) with no errors.
-- All data is live (Firestore subscriptions), not mocked.
-- Every write has a corresponding allow-rule in `firestore.rules`.
-- Matches the relevant `/design/*.md` spec.
-- No hardcoded colors/money/paths.
+- `npm run typecheck` (tsc) passes, zero errors.
+- All data is live (Firestore subscriptions via the ported hooks), not mocked.
+- Reuses the ported `*Api.ts` for every write (don't reimplement writes).
+- Uses theme tokens; no hardcoded colors/spacing; money via `formatMoney`.
+- No web APIs. Matches the relevant `design/*.md`.

@@ -9,6 +9,7 @@
  * line-items on every write via money.ts's rule (Σ price*qty for non-voided).
  */
 import { doc, runTransaction, serverTimestamp } from "firebase/firestore";
+import { randomUUID } from "expo-crypto";
 import { db } from "@/lib/firebase";
 import { paths } from "@/lib/firestore/paths";
 import { computeBill } from "@/lib/money";
@@ -32,7 +33,7 @@ function subtotalOf(items: OrderItem[]): number {
 /** Build a fresh `pending` order line for a menu item (price snapshotted). */
 export function newOrderLine(menuItemId: string, name: string, price: number): OrderItem {
   return {
-    lineId: crypto.randomUUID(),
+    lineId: randomUUID(),
     menuItemId,
     name,
     price,
