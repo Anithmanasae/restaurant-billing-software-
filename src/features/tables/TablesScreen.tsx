@@ -1,0 +1,856 @@
+/**
+ * Tables (Floor View) — SADA POS, React Native port.
+ *
+ * Live floor grid: subscribes to `tables` and to every open/billed order, maps
+ * each table to its running order (total + elapsed time), and colour-codes cards
+ * by status. All writes go through the ported `tablesApi` — this screen never
+ * touches Firestore directly.
+ */
+import { useEffect, useMemo, useState } from "react";
+import {
+  Alert,
+  FlatList,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { query, where } from "firebase/firestore";
+import { router } from "expo-router";
+
+import { paths } from "@/lib/firestore/paths";
+import { useCollectionData } from "@/lib/firestore/useRealtime";
+import { formatMoney } from "@/lib/money";
+import { colors, radius, shadow, space } from "@/theme/theme";
+import type { Order, OrderItem, Table, TableStatus } from "@/types/models";
+import { useAuth } from "@/features/auth/AuthContext";
+import {
+  closeTable,
+  mergeTables,
+  openTable,
+  shiftTable,
+  splitTable,
+} from "./tablesApi";
+
+type FilterKey = "all" | TableStatus;
+type Sheet = "actions" | "merge" | "shift" | "split" | null;
+
+const FILTERS: { key: FilterKey; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "available", label: "Available" },
+  { key: "occupied", label: "Occupied" },
+  { key: "billed", label: "Billed" },
+];
+
+/** ms -> "5m" / "1h 20m" / "just now". */
+function formatElapsed(fromMs: number, nowMs: number): string {
+  const mins = Math.max(0, Math.floor((nowMs - fromMs) / 60000));
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function tableName(t: Table): string {
+  return t.label ?? `T${t.number}`;
+}
+
+export function TablesScreen() {
+  const insets = useSafeAreaInsets();
+  const { profile, firebaseUser } = useAuth();
+  const waiterId = profile?.uid ?? firebaseUser?.uid ?? "";
+
+  // ── Live subscriptions ────────────────────────────────────────────────────
+  const tablesQuery = useMemo(() => paths.tables(), []);
+  const ordersQuery = useMemo(
+    () => query(paths.orders(), where("status", "in", ["open", "billed"])),
+    []
+  );
+  const { data: tables, loading } = useCollectionData<Table>(tablesQuery);
+  const { data: orders } = useCollectionData<Order>(ordersQuery);
+
+  // tableId -> its running order
+  const orderByTable = useMemo(() => {
+    const map = new Map<string, Order & { id: string }>();
+    for (const o of orders) {
+      if (o.tableId) map.set(o.tableId, o);
+    }
+    return map;
+  }, [orders]);
+
+  const tableById = useMemo(() => {
+    const map = new Map<string, Table & { id: string }>();
+    for (const t of tables) map.set(t.id, t);
+    return map;
+  }, [tables]);
+
+  // ── Ticking clock for elapsed time (no polling of data — just re-render) ───
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ── Filtering + counts ─────────────────────────────────────────────────────
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const counts = useMemo(() => {
+    const c = { all: tables.length, available: 0, occupied: 0, billed: 0 };
+    for (const t of tables) c[t.status] += 1;
+    return c;
+  }, [tables]);
+
+  const visibleTables = useMemo(() => {
+    const sorted = [...tables].sort((a, b) => a.number - b.number);
+    if (filter === "all") return sorted;
+    return sorted.filter((t) => t.status === filter);
+  }, [tables, filter]);
+
+  // ── Action sheet state ─────────────────────────────────────────────────────
+  const [sheet, setSheet] = useState<Sheet>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const selected = selectedId ? tableById.get(selectedId) ?? null : null;
+  const selectedOrder = selectedId ? orderByTable.get(selectedId) ?? null : null;
+
+  const freeTables = useMemo(
+    () =>
+      [...tables]
+        .filter(
+          (t) =>
+            t.status === "available" &&
+            !t.mergedInto &&
+            t.id !== selectedId
+        )
+        .sort((a, b) => a.number - b.number),
+    [tables, selectedId]
+  );
+
+  function closeSheet() {
+    setSheet(null);
+    setSelectedId(null);
+  }
+
+  async function run(fn: () => Promise<unknown>, onDone?: () => void) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fn();
+      onDone?.();
+    } catch (e) {
+      Alert.alert("Action failed", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleCardPress(t: Table & { id: string }) {
+    setSelectedId(t.id);
+    if (t.status === "available" && !t.mergedInto) {
+      // Fast path: open the table straight away.
+      void run(
+        async () => {
+          await openTable(t.id, waiterId);
+          router.push("/order/" + t.id);
+        },
+        closeSheet
+      );
+      return;
+    }
+    setSheet("actions");
+  }
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+  return (
+    <View style={[styles.screen, { paddingTop: insets.top }]}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Tables</Text>
+        <Text style={styles.subtitle}>Manage your floor</Text>
+      </View>
+
+      <View style={styles.filterRow}>
+        {FILTERS.map((f) => {
+          const active = filter === f.key;
+          return (
+            <Pressable
+              key={f.key}
+              onPress={() => setFilter(f.key)}
+              style={[styles.filterChip, active && styles.filterChipActive]}
+            >
+              <Text
+                style={[styles.filterText, active && styles.filterTextActive]}
+              >
+                {f.label} {counts[f.key]}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <FlatList
+        data={visibleTables}
+        keyExtractor={(t) => t.id}
+        numColumns={2}
+        columnWrapperStyle={styles.column}
+        contentContainerStyle={[
+          styles.grid,
+          { paddingBottom: insets.bottom + space.s6 },
+        ]}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            {loading ? "Loading floor…" : "No tables to show."}
+          </Text>
+        }
+        renderItem={({ item }) => (
+          <TableCard
+            table={item}
+            order={orderByTable.get(item.id) ?? null}
+            primary={
+              item.mergedInto ? tableById.get(item.mergedInto) ?? null : null
+            }
+            now={now}
+            onPress={() => handleCardPress(item)}
+          />
+        )}
+      />
+
+      {/* Action sheet modal */}
+      <Modal
+        visible={sheet !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeSheet}
+      >
+        <Pressable style={styles.backdrop} onPress={closeSheet}>
+          <Pressable style={styles.sheet} onPress={() => {}}>
+            {sheet === "actions" && selected && (
+              <ActionsSheet
+                table={selected}
+                hasOrder={!!selectedOrder}
+                busy={busy}
+                onOpenOrder={() => {
+                  const id = selected.id;
+                  closeSheet();
+                  router.push("/order/" + id);
+                }}
+                onMerge={() => setSheet("merge")}
+                onShift={() => setSheet("shift")}
+                onSplit={() => setSheet("split")}
+                onClose={() =>
+                  run(() => closeTable(selected.id), closeSheet)
+                }
+                onDismiss={closeSheet}
+              />
+            )}
+
+            {sheet === "merge" && selected && (
+              <MergeSheet
+                primary={selected}
+                candidates={tables
+                  .filter((t) => t.id !== selected.id && !t.mergedInto)
+                  .sort((a, b) => a.number - b.number)}
+                busy={busy}
+                onConfirm={(ids) =>
+                  run(() => mergeTables(selected.id, ids), closeSheet)
+                }
+                onBack={() => setSheet("actions")}
+              />
+            )}
+
+            {sheet === "shift" && selected && (
+              <PickTableSheet
+                heading={`Shift ${tableName(selected)} to…`}
+                tables={freeTables}
+                busy={busy}
+                disabled={!selectedOrder}
+                emptyHint={
+                  !selectedOrder
+                    ? "This table has no active order to shift."
+                    : "No free tables available."
+                }
+                onPick={(target) => {
+                  if (!selectedOrder) return;
+                  run(
+                    () =>
+                      shiftTable(selectedOrder.id, selected.id, target.id),
+                    closeSheet
+                  );
+                }}
+                onBack={() => setSheet("actions")}
+              />
+            )}
+
+            {sheet === "split" && selected && (
+              <SplitSheet
+                order={selectedOrder}
+                freeTables={freeTables}
+                busy={busy}
+                onConfirm={(lineIds, target) =>
+                  run(
+                    () =>
+                      splitTable(
+                        selectedOrder!.id,
+                        target.id,
+                        lineIds,
+                        waiterId
+                      ),
+                    closeSheet
+                  )
+                }
+                onBack={() => setSheet("actions")}
+              />
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Table card
+// ─────────────────────────────────────────────────────────────────────────────
+
+function TableCard({
+  table,
+  order,
+  primary,
+  now,
+  onPress,
+}: {
+  table: Table & { id: string };
+  order: (Order & { id: string }) | null;
+  primary: (Table & { id: string }) | null;
+  now: number;
+  onPress: () => void;
+}) {
+  const status = table.status;
+  const cardStyle = [
+    styles.card,
+    status === "available" && styles.cardAvailable,
+    status === "occupied" && styles.cardOccupied,
+    status === "billed" && styles.cardBilled,
+  ];
+  const nameStyle = [
+    styles.cardName,
+    status === "available" && styles.cardNameAvailable,
+    status === "billed" && styles.cardNameMuted,
+  ];
+
+  const createdMs = order?.createdAt ? order.createdAt.toMillis() : null;
+
+  return (
+    <Pressable style={cardStyle} onPress={onPress}>
+      <View style={styles.cardTopRow}>
+        <Text style={nameStyle}>{tableName(table)}</Text>
+        <StatusPill status={status} />
+      </View>
+
+      <Text style={styles.cardSeats}>{table.capacity} seats</Text>
+
+      {primary && (
+        <View style={styles.mergeBadge}>
+          <Text style={styles.mergeBadgeText}>
+            Merged → {tableName(primary)}
+          </Text>
+        </View>
+      )}
+
+      {order && !table.mergedInto && (
+        <View style={styles.cardMeta}>
+          <Text style={styles.cardTotal}>{formatMoney(order.subtotal)}</Text>
+          {createdMs !== null && (
+            <Text style={styles.cardElapsed}>
+              {formatElapsed(createdMs, now)}
+            </Text>
+          )}
+        </View>
+      )}
+    </Pressable>
+  );
+}
+
+function StatusPill({ status }: { status: TableStatus }) {
+  const map = {
+    available: { bg: colors.primarySoft, fg: colors.primary, label: "Free" },
+    occupied: { bg: colors.amberSoft, fg: colors.amberText, label: "Occupied" },
+    billed: { bg: colors.surfaceMuted, fg: colors.textMuted, label: "Billed" },
+  }[status];
+  return (
+    <View style={[styles.pill, { backgroundColor: map.bg }]}>
+      <Text style={[styles.pillText, { color: map.fg }]}>{map.label}</Text>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Action sheets
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SheetHeader({ title }: { title: string }) {
+  return <Text style={styles.sheetTitle}>{title}</Text>;
+}
+
+function ActionButton({
+  label,
+  onPress,
+  variant = "default",
+  disabled,
+}: {
+  label: string;
+  onPress: () => void;
+  variant?: "default" | "primary" | "danger";
+  disabled?: boolean;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={[
+        styles.action,
+        variant === "primary" && styles.actionPrimary,
+        variant === "danger" && styles.actionDanger,
+        disabled && styles.actionDisabled,
+      ]}
+    >
+      <Text
+        style={[
+          styles.actionText,
+          variant === "primary" && styles.actionTextPrimary,
+          variant === "danger" && styles.actionTextDanger,
+        ]}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function ActionsSheet({
+  table,
+  hasOrder,
+  busy,
+  onOpenOrder,
+  onMerge,
+  onShift,
+  onSplit,
+  onClose,
+  onDismiss,
+}: {
+  table: Table;
+  hasOrder: boolean;
+  busy: boolean;
+  onOpenOrder: () => void;
+  onMerge: () => void;
+  onShift: () => void;
+  onSplit: () => void;
+  onClose: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <View>
+      <SheetHeader title={tableName(table)} />
+      <ActionButton
+        label="View / edit order"
+        variant="primary"
+        onPress={onOpenOrder}
+        disabled={busy || !hasOrder}
+      />
+      <ActionButton label="Merge tables" onPress={onMerge} disabled={busy} />
+      <ActionButton
+        label="Shift to another table"
+        onPress={onShift}
+        disabled={busy || !hasOrder}
+      />
+      <ActionButton
+        label="Split table"
+        onPress={onSplit}
+        disabled={busy || !hasOrder}
+      />
+      <ActionButton
+        label="Close table (free)"
+        variant="danger"
+        onPress={onClose}
+        disabled={busy}
+      />
+      <ActionButton label="Cancel" onPress={onDismiss} disabled={busy} />
+    </View>
+  );
+}
+
+function MergeSheet({
+  primary,
+  candidates,
+  busy,
+  onConfirm,
+  onBack,
+}: {
+  primary: Table;
+  candidates: (Table & { id: string })[];
+  busy: boolean;
+  onConfirm: (ids: string[]) => void;
+  onBack: () => void;
+}) {
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  function toggle(id: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  return (
+    <View>
+      <SheetHeader title={`Merge into ${tableName(primary)}`} />
+      <Text style={styles.sheetHint}>
+        Pick the tables to fold into this one.
+      </Text>
+      <ScrollView style={styles.pickList}>
+        {candidates.length === 0 && (
+          <Text style={styles.empty}>No other tables available.</Text>
+        )}
+        {candidates.map((t) => (
+          <Pressable
+            key={t.id}
+            style={[styles.pickRow, picked.has(t.id) && styles.pickRowActive]}
+            onPress={() => toggle(t.id)}
+          >
+            <Text style={styles.pickLabel}>{tableName(t)}</Text>
+            <Text style={styles.pickMeta}>
+              {picked.has(t.id) ? "Selected" : t.status}
+            </Text>
+          </Pressable>
+        ))}
+      </ScrollView>
+      <ActionButton
+        label={`Merge ${picked.size} table${picked.size === 1 ? "" : "s"}`}
+        variant="primary"
+        onPress={() => onConfirm([...picked])}
+        disabled={busy || picked.size === 0}
+      />
+      <ActionButton label="Back" onPress={onBack} disabled={busy} />
+    </View>
+  );
+}
+
+function PickTableSheet({
+  heading,
+  tables,
+  busy,
+  disabled,
+  emptyHint,
+  onPick,
+  onBack,
+}: {
+  heading: string;
+  tables: (Table & { id: string })[];
+  busy: boolean;
+  disabled?: boolean;
+  emptyHint: string;
+  onPick: (t: Table & { id: string }) => void;
+  onBack: () => void;
+}) {
+  return (
+    <View>
+      <SheetHeader title={heading} />
+      <ScrollView style={styles.pickList}>
+        {disabled || tables.length === 0 ? (
+          <Text style={styles.empty}>{emptyHint}</Text>
+        ) : (
+          tables.map((t) => (
+            <Pressable
+              key={t.id}
+              style={styles.pickRow}
+              onPress={() => !busy && onPick(t)}
+            >
+              <Text style={styles.pickLabel}>{tableName(t)}</Text>
+              <Text style={styles.pickMeta}>{t.capacity} seats</Text>
+            </Pressable>
+          ))
+        )}
+      </ScrollView>
+      <ActionButton label="Back" onPress={onBack} disabled={busy} />
+    </View>
+  );
+}
+
+function SplitSheet({
+  order,
+  freeTables,
+  busy,
+  onConfirm,
+  onBack,
+}: {
+  order: (Order & { id: string }) | null;
+  freeTables: (Table & { id: string })[];
+  busy: boolean;
+  onConfirm: (lineIds: string[], target: Table & { id: string }) => void;
+  onBack: () => void;
+}) {
+  const [lines, setLines] = useState<Set<string>>(new Set());
+  const [targetId, setTargetId] = useState<string | null>(null);
+  const activeLines: OrderItem[] = order
+    ? order.items.filter((l) => !l.voided)
+    : [];
+
+  function toggleLine(id: string) {
+    setLines((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const target = freeTables.find((t) => t.id === targetId) ?? null;
+  const canConfirm =
+    !busy && lines.size > 0 && !!target && activeLines.length > lines.size;
+
+  return (
+    <View>
+      <SheetHeader title="Split table" />
+      {!order || activeLines.length === 0 ? (
+        <Text style={styles.empty}>No order lines to split.</Text>
+      ) : (
+        <>
+          <Text style={styles.sheetHint}>Move these items:</Text>
+          <ScrollView style={styles.pickList}>
+            {activeLines.map((l) => (
+              <Pressable
+                key={l.lineId}
+                style={[
+                  styles.pickRow,
+                  lines.has(l.lineId) && styles.pickRowActive,
+                ]}
+                onPress={() => toggleLine(l.lineId)}
+              >
+                <Text style={styles.pickLabel}>
+                  {l.qty}× {l.name}
+                </Text>
+                <Text style={styles.pickMeta}>
+                  {formatMoney(l.price * l.qty)}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          <Text style={styles.sheetHint}>To table:</Text>
+          <ScrollView horizontal style={styles.targetRow}>
+            {freeTables.length === 0 && (
+              <Text style={styles.empty}>No free tables.</Text>
+            )}
+            {freeTables.map((t) => (
+              <Pressable
+                key={t.id}
+                style={[
+                  styles.targetChip,
+                  targetId === t.id && styles.targetChipActive,
+                ]}
+                onPress={() => setTargetId(t.id)}
+              >
+                <Text
+                  style={[
+                    styles.targetChipText,
+                    targetId === t.id && styles.targetChipTextActive,
+                  ]}
+                >
+                  {tableName(t)}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </>
+      )}
+
+      <ActionButton
+        label="Split selected"
+        variant="primary"
+        onPress={() => target && onConfirm([...lines], target)}
+        disabled={!canConfirm}
+      />
+      <ActionButton label="Back" onPress={onBack} disabled={busy} />
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles
+// ─────────────────────────────────────────────────────────────────────────────
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.bg },
+  header: {
+    paddingHorizontal: space.s4,
+    paddingTop: space.s4,
+    paddingBottom: space.s2,
+  },
+  title: { fontSize: 24, fontWeight: "700", color: colors.text },
+  subtitle: { fontSize: 14, color: colors.textMuted, marginTop: space.s1 },
+
+  filterRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space.s2,
+    paddingHorizontal: space.s4,
+    paddingVertical: space.s3,
+  },
+  filterChip: {
+    paddingHorizontal: space.s3,
+    paddingVertical: space.s2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  filterChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  filterText: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
+  filterTextActive: { color: colors.textInverse },
+
+  grid: { paddingHorizontal: space.s4 },
+  column: { gap: space.s3, marginBottom: space.s3 },
+  empty: {
+    textAlign: "center",
+    color: colors.textMuted,
+    padding: space.s5,
+    fontSize: 14,
+  },
+
+  card: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: space.s4,
+    minHeight: 104,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadow.card,
+  },
+  cardAvailable: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primarySoft,
+  },
+  cardOccupied: { borderColor: colors.accentAmber, borderWidth: 1.5 },
+  cardBilled: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.borderStrong,
+  },
+  cardTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  cardName: { fontSize: 18, fontWeight: "700", color: colors.text },
+  cardNameAvailable: { color: colors.primaryDark },
+  cardNameMuted: { color: colors.textMuted },
+  cardSeats: { fontSize: 12, color: colors.textMuted, marginTop: space.s1 },
+
+  cardMeta: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginTop: space.s3,
+  },
+  cardTotal: { fontSize: 16, fontWeight: "700", color: colors.text },
+  cardElapsed: { fontSize: 12, color: colors.amberText, fontWeight: "600" },
+
+  mergeBadge: {
+    marginTop: space.s2,
+    alignSelf: "flex-start",
+    backgroundColor: colors.surfaceMuted,
+    paddingHorizontal: space.s2,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+  },
+  mergeBadgeText: { fontSize: 11, color: colors.textMuted, fontWeight: "600" },
+
+  pill: {
+    paddingHorizontal: space.s2,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
+  pillText: { fontSize: 11, fontWeight: "700" },
+
+  // Modal / sheets
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    padding: space.s4,
+    paddingBottom: space.s6,
+    maxHeight: "80%",
+  },
+  sheetTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.text,
+    marginBottom: space.s3,
+  },
+  sheetHint: {
+    fontSize: 13,
+    color: colors.textMuted,
+    marginBottom: space.s2,
+    marginTop: space.s2,
+  },
+
+  action: {
+    paddingVertical: space.s3,
+    paddingHorizontal: space.s4,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceMuted,
+    marginTop: space.s2,
+    alignItems: "center",
+  },
+  actionPrimary: { backgroundColor: colors.primary },
+  actionDanger: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.danger },
+  actionDisabled: { opacity: 0.45 },
+  actionText: { fontSize: 15, fontWeight: "600", color: colors.text },
+  actionTextPrimary: { color: colors.textInverse },
+  actionTextDanger: { color: colors.danger },
+
+  pickList: { maxHeight: 260 },
+  pickRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: space.s3,
+    paddingHorizontal: space.s3,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: space.s2,
+  },
+  pickRowActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
+  pickLabel: { fontSize: 15, fontWeight: "600", color: colors.text },
+  pickMeta: { fontSize: 13, color: colors.textMuted },
+
+  targetRow: { flexDirection: "row", marginBottom: space.s2 },
+  targetChip: {
+    paddingHorizontal: space.s3,
+    paddingVertical: space.s2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginRight: space.s2,
+  },
+  targetChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  targetChipText: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
+  targetChipTextActive: { color: colors.textInverse },
+});
