@@ -44,12 +44,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return onAuthStateChanged(auth, async (user) => {
       setFirebaseUser(user);
       if (user) {
-        const snap = await getDoc(paths.user(user.uid));
-        const data = snap.exists()
-          ? ({ ...snap.data(), uid: user.uid } as AppUser)
-          : null;
-        // Deactivated staff are treated as signed out.
-        setProfile(data && data.active ? data : null);
+        try {
+          const snap = await getDoc(paths.user(user.uid));
+          const data = snap.exists()
+            ? ({ ...snap.data(), uid: user.uid } as AppUser)
+            : null;
+          // Deactivated staff are treated as signed out.
+          setProfile(data && data.active ? data : null);
+        } catch (e) {
+          // Profile unreadable (offline, rules, missing doc) — treat as
+          // signed-out rather than crashing the app at startup.
+          console.warn("[auth] failed to load profile:", e);
+          setProfile(null);
+        }
       } else {
         setProfile(null);
       }
