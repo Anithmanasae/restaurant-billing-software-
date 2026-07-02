@@ -26,6 +26,9 @@ scripts/serviceAccount.json
 firebase-debug.log
 firestore-debug.log
 ui-debug.log
+# service-account key for the seed script — NEVER commit
+scripts/serviceAccount.json
+serviceAccount.json
 
 # editor / os
 .vscode/*

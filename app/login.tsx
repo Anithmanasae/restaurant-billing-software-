@@ -13,6 +13,27 @@ import { useAuth } from "@/features/auth/AuthContext";
 import { homePathForRole } from "@/features/auth/roleRoutes";
 import { colors, space, radius } from "@/theme/theme";
 
+/** Map Firebase auth error codes to messages a restaurant staffer can act on. */
+function friendlyAuthError(e: unknown): string {
+  const code = (e as { code?: string })?.code ?? "";
+  switch (code) {
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+    case "auth/user-not-found":
+      return "Invalid email or password.";
+    case "auth/invalid-email":
+      return "That email address doesn't look right.";
+    case "auth/too-many-requests":
+      return "Too many attempts — wait a minute and try again.";
+    case "auth/network-request-failed":
+      return "No connection. Check your internet and try again.";
+    case "auth/user-disabled":
+      return "This account has been disabled. Contact your admin.";
+    default:
+      return "Sign-in failed. Please try again.";
+  }
+}
+
 export default function Login() {
   const { signIn, profile } = useAuth();
   const [email, setEmail] = useState("");
@@ -24,12 +45,16 @@ export default function Login() {
   if (profile) return <Redirect href={homePathForRole(profile.role)} />;
 
   async function onSubmit() {
+    if (!email.trim() || !password) {
+      setError("Enter your email and password.");
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
       await signIn(email.trim(), password);
-    } catch {
-      setError("Invalid email or password.");
+    } catch (e) {
+      setError(friendlyAuthError(e));
     } finally {
       setBusy(false);
     }

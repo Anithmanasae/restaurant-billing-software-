@@ -1,4 +1,4 @@
-import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
+import { InsightsScreen } from "@/features/reports";
 export default function InsightsRoute() {
-  return <ScreenPlaceholder title="Insights" />;
+  return <InsightsScreen />;
 }
