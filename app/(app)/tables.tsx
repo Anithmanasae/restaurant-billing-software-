@@ -1,4 +1,4 @@
-import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
+import { TablesScreen } from "@/features/tables";
 export default function TablesRoute() {
-  return <ScreenPlaceholder title="Tables" />;
+  return <TablesScreen />;
 }

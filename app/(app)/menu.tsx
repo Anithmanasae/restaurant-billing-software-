@@ -1,4 +1,4 @@
-import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
+import { MenuManagementScreen } from "@/features/menu";
 export default function MenuRoute() {
-  return <ScreenPlaceholder title="Menu Management" />;
+  return <MenuManagementScreen />;
 }

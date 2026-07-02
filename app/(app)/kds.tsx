@@ -1,4 +1,4 @@
-import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
+import { KitchenDisplayScreen } from "@/features/kitchen";
 export default function KdsRoute() {
-  return <ScreenPlaceholder title="Kitchen Display" />;
+  return <KitchenDisplayScreen />;
 }
