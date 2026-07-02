@@ -1,0 +1,465 @@
+/**
+ * Add / Edit menu item modal form. Reuses the ported menuApi writes:
+ *   - createMenuItem / updateMenuItem
+ *   - uploadMenuItemImage (create the item first to obtain its id)
+ *
+ * Price is entered in rupees (₹) and stored as paise via rupeesToPaise.
+ */
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { rupeesToPaise } from "@/lib/money";
+import { colors, radius, space } from "@/theme/theme";
+import type { MenuCategory, MenuItem } from "@/types/models";
+import {
+  createMenuItem,
+  updateMenuItem,
+  uploadMenuItemImage,
+  type MenuItemInput,
+} from "./menuApi";
+import type { MenuCategoryDoc, MenuItemDoc } from "./useMenuData";
+
+interface MenuItemFormProps {
+  visible: boolean;
+  /** The item being edited, or null to create a new one. */
+  item: MenuItemDoc | null;
+  categories: MenuCategoryDoc[];
+  /** Pre-selected category when adding from within a category section. */
+  defaultCategoryId?: string;
+  onClose: () => void;
+}
+
+/** paise -> plain rupees string for the price input, e.g. 8500 -> "85". */
+function paiseToRupeeString(paise: number): string {
+  const rupees = paise / 100;
+  return Number.isInteger(rupees) ? String(rupees) : rupees.toFixed(2);
+}
+
+export function MenuItemForm({
+  visible,
+  item,
+  categories,
+  defaultCategoryId,
+  onClose,
+}: MenuItemFormProps) {
+  const [name, setName] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [priceRupees, setPriceRupees] = useState("");
+  const [description, setDescription] = useState("");
+  const [sku, setSku] = useState("");
+  const [enabled, setEnabled] = useState(true);
+  const [localImageUri, setLocalImageUri] = useState<string | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState<string | undefined>(
+    undefined
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const insets = useSafeAreaInsets();
+
+  // Reset the form whenever it opens for a different item.
+  useEffect(() => {
+    if (!visible) return;
+    setName(item?.name ?? "");
+    setCategoryId(item?.categoryId ?? defaultCategoryId ?? "");
+    setPriceRupees(item ? paiseToRupeeString(item.price) : "");
+    setDescription(item?.description ?? "");
+    setSku(item?.sku ?? "");
+    setEnabled(item?.enabled ?? true);
+    setLocalImageUri(null);
+    setExistingImageUrl(item?.imageUrl);
+    setError(null);
+    setSaving(false);
+  }, [visible, item, defaultCategoryId]);
+
+  const pickImage = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      setError("Photo library permission is required to add an image.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+      allowsEditing: true,
+      aspect: [1, 1],
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      setLocalImageUri(result.assets[0].uri);
+    }
+  };
+
+  const handleSave = async () => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("Name is required.");
+      return;
+    }
+    if (!categoryId) {
+      setError("Please choose a category.");
+      return;
+    }
+    const priceNum = Number(priceRupees);
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
+      setError("Enter a valid price.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      const base: MenuItemInput = {
+        name: trimmedName,
+        categoryId,
+        price: rupeesToPaise(priceNum),
+        enabled,
+        description: description.trim() || undefined,
+        sku: sku.trim() || undefined,
+        imageUrl: existingImageUrl,
+      };
+
+      // Create the item first (to obtain an id) so the image can be uploaded
+      // under that id, then persist the download URL onto the item.
+      const itemId = item ? item.id : await createMenuItem(base);
+      if (item) {
+        await updateMenuItem(itemId, base);
+      }
+
+      if (localImageUri) {
+        const blob = await (await fetch(localImageUri)).blob();
+        await uploadMenuItemImage(itemId, blob);
+      }
+
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save item.");
+      setSaving(false);
+    }
+  };
+
+  const previewUri = localImageUri ?? existingImageUrl;
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <View style={styles.backdrop}>
+        <View style={[styles.sheet, { paddingBottom: insets.bottom + space.s4 }]}>
+          <View style={styles.header}>
+            <Text style={styles.title}>
+              {item ? "Edit Item" : "Add Item"}
+            </Text>
+            <Pressable hitSlop={8} onPress={onClose}>
+              <Text style={styles.close}>✕</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Pressable style={styles.imagePicker} onPress={pickImage}>
+              {previewUri ? (
+                <Image
+                  style={styles.imagePreview}
+                  source={{ uri: previewUri }}
+                  contentFit="cover"
+                />
+              ) : (
+                <View style={styles.imageEmpty}>
+                  <Text style={styles.imageEmptyIcon}>📷</Text>
+                  <Text style={styles.imageEmptyText}>Add photo</Text>
+                </View>
+              )}
+            </Pressable>
+            {previewUri ? (
+              <Pressable onPress={pickImage}>
+                <Text style={styles.changePhoto}>Change photo</Text>
+              </Pressable>
+            ) : null}
+
+            <Text style={styles.label}>Name</Text>
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="e.g. Paneer Tikka"
+              placeholderTextColor={colors.textMuted}
+            />
+
+            <Text style={styles.label}>Category</Text>
+            <View style={styles.chips}>
+              {categories.map((c) => {
+                const active = c.id === categoryId;
+                return (
+                  <Pressable
+                    key={c.id}
+                    style={[styles.chip, active && styles.chipActive]}
+                    onPress={() => setCategoryId(c.id)}
+                  >
+                    <Text
+                      style={[styles.chipText, active && styles.chipTextActive]}
+                    >
+                      {c.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+              {categories.length === 0 ? (
+                <Text style={styles.help}>
+                  No categories yet — add one first.
+                </Text>
+              ) : null}
+            </View>
+
+            <Text style={styles.label}>Price (₹)</Text>
+            <TextInput
+              style={styles.input}
+              value={priceRupees}
+              onChangeText={setPriceRupees}
+              placeholder="0"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="decimal-pad"
+            />
+
+            <Text style={styles.label}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.inputMultiline]}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Optional"
+              placeholderTextColor={colors.textMuted}
+              multiline
+            />
+
+            <Text style={styles.label}>SKU</Text>
+            <TextInput
+              style={styles.input}
+              value={sku}
+              onChangeText={setSku}
+              placeholder="Optional"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="characters"
+            />
+
+            <View style={styles.enabledRow}>
+              <Text style={styles.label}>Available</Text>
+              <Switch
+                value={enabled}
+                onValueChange={setEnabled}
+                trackColor={{ true: colors.primary, false: colors.borderStrong }}
+                thumbColor={colors.surface}
+              />
+            </View>
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+          </ScrollView>
+
+          <View style={styles.footer}>
+            <Pressable
+              style={[styles.btn, styles.btnGhost]}
+              onPress={onClose}
+              disabled={saving}
+            >
+              <Text style={styles.btnGhostText}>Cancel</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.btn, styles.btnPrimary, saving && styles.btnDisabled]}
+              onPress={handleSave}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator color={colors.textInverse} />
+              ) : (
+                <Text style={styles.btnPrimaryText}>
+                  {item ? "Save Changes" : "Add Item"}
+                </Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    maxHeight: "92%",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: space.s4,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: colors.text,
+  },
+  close: {
+    fontSize: 18,
+    color: colors.textMuted,
+  },
+  scroll: {
+    flexGrow: 0,
+  },
+  scrollContent: {
+    padding: space.s4,
+    gap: space.s2,
+  },
+  imagePicker: {
+    alignSelf: "center",
+    width: 140,
+    height: 140,
+    borderRadius: radius.md,
+    overflow: "hidden",
+    backgroundColor: colors.surfaceMuted,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  imagePreview: {
+    width: "100%",
+    height: "100%",
+  },
+  imageEmpty: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: space.s1,
+  },
+  imageEmptyIcon: {
+    fontSize: 28,
+  },
+  imageEmptyText: {
+    fontSize: 12,
+    color: colors.textMuted,
+  },
+  changePhoto: {
+    alignSelf: "center",
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: space.s1,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: colors.textMuted,
+    marginTop: space.s2,
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.s3,
+    paddingVertical: space.s3,
+    fontSize: 15,
+    color: colors.text,
+  },
+  inputMultiline: {
+    minHeight: 72,
+    textAlignVertical: "top",
+  },
+  chips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: space.s2,
+  },
+  chip: {
+    paddingHorizontal: space.s3,
+    paddingVertical: space.s2,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+  },
+  chipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  chipText: {
+    fontSize: 13,
+    color: colors.text,
+  },
+  chipTextActive: {
+    color: colors.textInverse,
+    fontWeight: "600",
+  },
+  help: {
+    fontSize: 13,
+    color: colors.textMuted,
+  },
+  enabledRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: space.s3,
+  },
+  error: {
+    color: colors.danger,
+    fontSize: 13,
+    marginTop: space.s2,
+  },
+  footer: {
+    flexDirection: "row",
+    gap: space.s3,
+    paddingHorizontal: space.s4,
+    paddingTop: space.s3,
+  },
+  btn: {
+    flex: 1,
+    height: 48,
+    borderRadius: radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  btnPrimary: {
+    backgroundColor: colors.primary,
+  },
+  btnPrimaryText: {
+    color: colors.textInverse,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  btnGhost: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+  },
+  btnGhostText: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  btnDisabled: {
+    opacity: 0.6,
+  },
+});
