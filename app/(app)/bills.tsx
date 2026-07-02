@@ -1,4 +1,4 @@
-import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
+import { CashierScreen } from "@/features/cashier";
 export default function BillsRoute() {
-  return <ScreenPlaceholder title="Bills" />;
+  return <CashierScreen />;
 }

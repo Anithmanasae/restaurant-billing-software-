@@ -1,6 +1,6 @@
-import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
+import { OrderScreen } from "@/features/order";
 
 /** Takeaway order (no table). */
 export default function TakeawayOrderRoute() {
-  return <ScreenPlaceholder title="New Order — Takeaway" />;
+  return <OrderScreen />;
 }
