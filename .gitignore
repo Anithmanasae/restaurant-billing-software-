@@ -19,6 +19,7 @@ expo-env.d.ts
 .env
 .env.local
 .env.*.local
+scripts/serviceAccount.json
 
 # firebase
 .firebase/
