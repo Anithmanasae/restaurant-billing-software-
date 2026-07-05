@@ -30,6 +30,10 @@ export default function AppLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        // Don't mount hidden tabs up front, and freeze them once blurred so
+        // background screens skip re-renders from live Firestore snapshots.
+        lazy: true,
+        freezeOnBlur: true,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: { backgroundColor: colors.surface },
