@@ -1,9 +1,10 @@
 /**
  * Bill detail — SADA POS Cashier, React Native port.
  *
- * Renders a single bill: the money summary (all values from the Bill doc via
- * `formatMoney` — never recomputed here), a discount control, payment-method
- * tiles, receipt tiles, and the Settle action. Every write goes through the
+ * Renders a single bill: the itemized order lines (what the customer bought,
+ * amount per line, item total below), the money summary (all values from the
+ * Bill doc via `formatMoney` — never recomputed here), a discount control,
+ * payment-method tiles, receipt tiles, and the Settle action. Every write goes through the
  * ported `cashierApi` (`applyDiscount`, `settleBill`, `reprintBill`); this
  * screen never touches Firestore or does money math.
  *
@@ -142,6 +143,30 @@ export function BillDetail({
       </View>
 
       <ScrollView contentContainerStyle={styles.body}>
+        {/* ── Items ───────────────────────────────────────────────────────── */}
+        {order && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Items</Text>
+            {order.items
+              .filter((i) => !i.voided)
+              .map((i) => (
+                <View style={styles.row} key={i.lineId}>
+                  <Text style={styles.itemName} numberOfLines={1}>
+                    {i.name} <Text style={styles.itemQty}>× {i.qty}</Text>
+                  </Text>
+                  <Text style={styles.rowValue}>
+                    {formatMoney(i.price * i.qty)}
+                  </Text>
+                </View>
+              ))}
+            <View style={styles.divider} />
+            <View style={styles.row}>
+              <Text style={styles.rowValue}>Item Total</Text>
+              <Text style={styles.rowValue}>{formatMoney(bill.subtotal)}</Text>
+            </View>
+          </View>
+        )}
+
         {/* ── Summary & Modifiers ─────────────────────────────────────────── */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Summary</Text>
@@ -358,6 +383,8 @@ const styles = StyleSheet.create({
   },
   rowLabel: { fontSize: 15, color: colors.text },
   rowValue: { fontSize: 15, fontWeight: "600", color: colors.text },
+  itemName: { flex: 1, fontSize: 15, color: colors.text, marginRight: space.s3 },
+  itemQty: { color: colors.textMuted, fontWeight: "600" },
   discountValue: { color: colors.primary },
 
   discountEditor: {
