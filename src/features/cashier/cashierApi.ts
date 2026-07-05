@@ -115,22 +115,6 @@ export async function generateBill(
 }
 
 /**
- * Re-price a bill when the discount changes. Recomputed from the order lines,
- * never from the stored total, so a tampered client can't inflate a discount
- * past what the items justify.
- */
-export async function applyDiscount(
-  billId: string,
-  order: Order,
-  discountPercent: number
-): Promise<void> {
-  const totals = computeBill(linesOf(order), discountPercent);
-  await updateDoc(paths.bill(billId), {
-    ...totals,
-  });
-}
-
-/**
  * Settle a bill: mark paid, close the order, free the table, and roll the sale
  * into today's summary — atomically. After this the bill is immutable (rules).
  */

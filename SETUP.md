@@ -44,9 +44,8 @@ firebase deploy --only firestore:rules,firestore:indexes,storage
 
 ## 3. Seed sample data + logins
 
-You can also create accounts directly in the app — the login screen has a
-**"New here? Create an account"** link with a role picker. (Open registration
-is for development; restrict it in `firestore.rules` before real use.)
+Accounts can only be created by an admin (via the seed script or the Firebase
+Console) — there is no in-app registration.
 
 Creates one user per role, sample menu categories/items, and 8 tables.
 

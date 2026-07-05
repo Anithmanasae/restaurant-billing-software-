@@ -3,13 +3,13 @@
  *
  * Renders a single bill: the itemized order lines (what the customer bought,
  * amount per line, item total below), the money summary (all values from the
- * Bill doc via `formatMoney` — never recomputed here), a discount control,
- * payment-method tiles, receipt tiles, and the Settle action. Every write goes through the
- * ported `cashierApi` (`applyDiscount`, `settleBill`, `reprintBill`); this
- * screen never touches Firestore or does money math.
+ * Bill doc via `formatMoney` — never recomputed here), payment-method tiles,
+ * receipt tiles, and the Settle action. Every write goes through the ported
+ * `cashierApi` (`settleBill`, `reprintBill`); this screen never touches
+ * Firestore or does money math.
  *
- * A paid bill is read-only: totals + "Paid via …" are shown, the settle and
- * discount controls are locked, but a reprint is still allowed.
+ * A paid bill is read-only: totals + "Paid via …" are shown, the settle
+ * controls are locked, but a reprint is still allowed.
  */
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -19,14 +19,12 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { formatMoney } from "@/lib/money";
 import { colors, radius, shadow, space } from "@/theme/theme";
 import type { PaymentMode } from "@/types/models";
-import { useAuth } from "@/features/auth/AuthContext";
-import { applyDiscount, reprintBill, settleBill } from "./cashierApi";
+import { reprintBill, settleBill } from "./cashierApi";
 import { useBill, useOrder } from "./useCashierData";
 
 const PAYMENT_TILES: { mode: PaymentMode; label: string; icon: string }[] = [
@@ -34,9 +32,6 @@ const PAYMENT_TILES: { mode: PaymentMode; label: string; icon: string }[] = [
   { mode: "upi", label: "UPI / QR", icon: "🔳" },
   { mode: "card", label: "Card", icon: "💳" },
 ];
-
-/** Discount ceilings by role — the UI guard (rules re-check server-side). */
-const DISCOUNT_CAP = { admin: 100, cashier: 20 } as const;
 
 function paymentLabel(mode: PaymentMode): string {
   return PAYMENT_TILES.find((t) => t.mode === mode)?.label ?? mode;
@@ -49,9 +44,6 @@ export function BillDetail({
   billId: string;
   onClose: () => void;
 }) {
-  const { role } = useAuth();
-  const discountCap = role === "admin" ? DISCOUNT_CAP.admin : DISCOUNT_CAP.cashier;
-
   const { data: bill, loading: billLoading } = useBill(billId);
   const { data: order } = useOrder(bill?.orderId ?? null);
 
@@ -59,13 +51,7 @@ export function BillDetail({
 
   // Local UI selections (bill.paymentMode is null until settled).
   const [selectedMode, setSelectedMode] = useState<PaymentMode | null>(null);
-  const [discountDraft, setDiscountDraft] = useState("0");
-  const [busy, setBusy] = useState<null | "discount" | "settle" | "print">(null);
-
-  // Keep the discount field in sync with the live bill value.
-  useEffect(() => {
-    if (bill) setDiscountDraft(String(bill.discountPercent));
-  }, [bill?.discountPercent]);
+  const [busy, setBusy] = useState<null | "settle" | "print">(null);
 
   // Reflect the settled mode once a bill is paid.
   useEffect(() => {
@@ -87,22 +73,6 @@ export function BillDetail({
     } finally {
       setBusy(null);
     }
-  }
-
-  function commitDiscount(raw: string) {
-    if (!bill || !order || isPaid) return;
-    const parsed = Math.round(Number(raw));
-    const next = Number.isFinite(parsed)
-      ? Math.min(Math.max(parsed, 0), discountCap)
-      : 0;
-    setDiscountDraft(String(next));
-    if (next === bill.discountPercent) return;
-    void run("discount", () => applyDiscount(bill.id, order, next));
-  }
-
-  function stepDiscount(delta: number) {
-    if (!bill) return;
-    commitDiscount(String(bill.discountPercent + delta));
   }
 
   function onSettle() {
@@ -167,56 +137,11 @@ export function BillDetail({
           </View>
         )}
 
-        {/* ── Summary & Modifiers ─────────────────────────────────────────── */}
+        {/* ── Summary ─────────────────────────────────────────────────────── */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Summary</Text>
 
           <Row label="Subtotal" value={formatMoney(bill.subtotal)} />
-
-          <Row
-            label={`Discount (${bill.discountPercent}%)`}
-            value={
-              bill.discountAmount > 0
-                ? `−${formatMoney(bill.discountAmount)}`
-                : formatMoney(0)
-            }
-            valueStyle={bill.discountAmount > 0 ? styles.discountValue : undefined}
-          />
-
-          {/* Discount editor (hidden once paid) */}
-          {!isPaid && (
-            <View style={styles.discountEditor}>
-              <Pressable
-                style={styles.stepBtn}
-                onPress={() => stepDiscount(-5)}
-                disabled={busy !== null}
-              >
-                <Text style={styles.stepBtnText}>−</Text>
-              </Pressable>
-              <TextInput
-                style={styles.discountInput}
-                value={discountDraft}
-                onChangeText={setDiscountDraft}
-                onEndEditing={(e) => commitDiscount(e.nativeEvent.text)}
-                keyboardType="number-pad"
-                returnKeyType="done"
-                editable={busy === null}
-                maxLength={3}
-              />
-              <Text style={styles.pctSign}>%</Text>
-              <Pressable
-                style={styles.stepBtn}
-                onPress={() => stepDiscount(5)}
-                disabled={busy !== null}
-              >
-                <Text style={styles.stepBtnText}>+</Text>
-              </Pressable>
-              <Text style={styles.capHint}>max {discountCap}%</Text>
-              {busy === "discount" && (
-                <ActivityIndicator color={colors.primary} size="small" />
-              )}
-            </View>
-          )}
 
           <Row label="GST (5%)" value={formatMoney(bill.gstTotal)} />
 
@@ -307,19 +232,11 @@ export function BillDetail({
   );
 }
 
-function Row({
-  label,
-  value,
-  valueStyle,
-}: {
-  label: string;
-  value: string;
-  valueStyle?: object;
-}) {
+function Row({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.row}>
       <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={[styles.rowValue, valueStyle]}>{value}</Text>
+      <Text style={styles.rowValue}>{value}</Text>
     </View>
   );
 }
@@ -385,38 +302,6 @@ const styles = StyleSheet.create({
   rowValue: { fontSize: 15, fontWeight: "600", color: colors.text },
   itemName: { flex: 1, fontSize: 15, color: colors.text, marginRight: space.s3 },
   itemQty: { color: colors.textMuted, fontWeight: "600" },
-  discountValue: { color: colors.primary },
-
-  discountEditor: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.s2,
-    marginTop: space.s1,
-    marginBottom: space.s2,
-  },
-  stepBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  stepBtnText: { fontSize: 20, fontWeight: "700", color: colors.text },
-  discountInput: {
-    width: 56,
-    height: 36,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.borderStrong,
-    textAlign: "center",
-    fontSize: 15,
-    fontWeight: "600",
-    color: colors.text,
-    paddingVertical: 0,
-  },
-  pctSign: { fontSize: 15, color: colors.textMuted },
-  capHint: { fontSize: 12, color: colors.textMuted, marginLeft: space.s1 },
 
   divider: {
     height: 1,

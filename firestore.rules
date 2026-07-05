@@ -48,17 +48,11 @@ service cloud.firestore {
 
       // ---- users ---------------------------------------------------------
       // Anyone signed in can read their own profile (needed to resolve role).
-      // Admins manage all staff. Self-signup: a user may create their OWN
-      // profile once (open registration — restrict this before production,
-      // e.g. require an admin-issued invite or force role to 'waiter').
+      // Accounts are provisioned by the admin/seed script only — there is no
+      // self-signup.
       match /users/{uid} {
         allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
-        allow create: if isAdmin()
-          || (signedIn()
-              && request.auth.uid == uid
-              && request.resource.data.role in ['admin', 'waiter', 'cashier', 'kitchen']
-              && request.resource.data.active == true);
-        allow update, delete: if isAdmin();
+        allow create, update, delete: if isAdmin();
       }
 
       // ---- menu ----------------------------------------------------------
@@ -111,9 +105,11 @@ service cloud.firestore {
       }
 
       // ---- bills ---------------------------------------------------------
-      // A waiter may only REQUEST a bill. Finalizing, applying discounts,
-      // taking payment, and marking paid are cashier/admin only. Paid bills
-      // are immutable. Totals must be internally consistent and non-negative.
+      // A waiter may only REQUEST a bill. Finalizing, taking payment, and
+      // marking paid are cashier/admin only. Discounts do not exist: every
+      // bill must carry discountPercent == 0 and discountAmount == 0. Paid
+      // bills are immutable. Totals must be internally consistent and
+      // non-negative.
       match /bills/{billId} {
         allow read: if signedIn();
 
@@ -121,8 +117,8 @@ service cloud.firestore {
         // straight to 'finalized'. New bills are never created already paid.
         allow create: if request.resource.data.grandTotal is int
           && request.resource.data.grandTotal >= 0
-          && request.resource.data.discountPercent >= 0
-          && request.resource.data.discountPercent <= 100
+          && request.resource.data.discountPercent == 0
+          && request.resource.data.discountAmount == 0
           && request.resource.data.gstTotal ==
              request.resource.data.cgst + request.resource.data.sgst
           && (
@@ -131,8 +127,8 @@ service cloud.firestore {
                 && request.resource.data.status in ['requested', 'finalized'])
           );
 
-        // Only cashier/admin finalize, discount, and settle. Once paid or
-        // void the bill is frozen — EXCEPT a reprint may bump printedCount.
+        // Only cashier/admin finalize and settle. Once paid or void the bill
+        // is frozen — EXCEPT a reprint may bump printedCount.
         allow update: if hasAnyRole(['admin', 'cashier'])
           && (
             // reprint: printedCount-only change, allowed in any status
@@ -142,8 +138,8 @@ service cloud.firestore {
               && resource.data.status != 'void'
               && request.resource.data.grandTotal is int
               && request.resource.data.grandTotal >= 0
-              && request.resource.data.discountPercent >= 0
-              && request.resource.data.discountPercent <= 100
+              && request.resource.data.discountPercent == 0
+              && request.resource.data.discountAmount == 0
               && request.resource.data.gstTotal ==
                  request.resource.data.cgst + request.resource.data.sgst
             )
