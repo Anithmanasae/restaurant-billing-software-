@@ -2,11 +2,13 @@
  * Bills (Cashier) — SADA POS, React Native port.
  *
  * Landing list for the cashier: bills a waiter has requested / finalized bills
- * in progress (`useActiveBills`), plus open orders that are ready to bill but
- * have no bill yet (`useBillableOrders`). Tapping a bill opens `BillDetail`;
- * tapping a "Ready to bill" order calls the ported `generateBill` and then
- * opens the resulting bill. All data is live; every write goes through
- * `cashierApi` — this screen never touches Firestore or does money math.
+ * in progress (`useActiveBills`), plus open orders split by kitchen progress
+ * (`useBillableOrders`): kitchen-done orders under "Ready to bill" (tappable —
+ * calls the ported `generateBill`, then opens the resulting bill) and orders
+ * the kitchen is still working on under "Preparing…" (greyed out, NOT
+ * tappable — food first, pay after). All data is live; every write goes
+ * through `cashierApi` — this screen never touches Firestore or does money
+ * math.
  */
 import { useMemo, useState } from "react";
 import {
@@ -34,7 +36,8 @@ import { BillDetail } from "./BillDetail";
 
 type BillRow = { kind: "bill"; bill: Bill & { id: string } };
 type OrderRow = { kind: "order"; order: Order & { id: string } };
-type Row = BillRow | OrderRow;
+type PreparingRow = { kind: "preparing"; order: Order & { id: string } };
+type Row = BillRow | OrderRow | PreparingRow;
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Admin",
@@ -61,7 +64,11 @@ export function BillsScreen() {
   const roleLabel = role ? ROLE_LABELS[role] ?? role : "";
 
   const { data: bills, loading: billsLoading } = useActiveBills();
-  const { data: orders, loading: ordersLoading } = useBillableOrders();
+  const {
+    data: orders,
+    preparing,
+    loading: ordersLoading,
+  } = useBillableOrders();
   const { data: tables } = useAllTables();
 
   const [selectedBillId, setSelectedBillId] = useState<string | null>(null);
@@ -87,12 +94,16 @@ export function BillsScreen() {
     const orderRows: Row[] = [...orders]
       .sort((a, b) => (a.createdAt?.toMillis() ?? 0) - (b.createdAt?.toMillis() ?? 0))
       .map((order) => ({ kind: "order", order }));
+    const preparingRows: Row[] = [...preparing]
+      .sort((a, b) => (a.createdAt?.toMillis() ?? 0) - (b.createdAt?.toMillis() ?? 0))
+      .map((order) => ({ kind: "preparing", order }));
 
     return [
       { title: "Bills", data: billRows },
       { title: "Ready to bill", data: orderRows },
+      { title: "Preparing…", data: preparingRows },
     ].filter((s) => s.data.length > 0);
-  }, [bills, orders]);
+  }, [bills, orders, preparing]);
 
   const now = Date.now();
   const loading = billsLoading || ordersLoading;
@@ -131,7 +142,11 @@ export function BillsScreen() {
       <SectionList
         sections={sections}
         keyExtractor={(item) =>
-          item.kind === "bill" ? `b:${item.bill.id}` : `o:${item.order.id}`
+          item.kind === "bill"
+            ? `b:${item.bill.id}`
+            : item.kind === "order"
+              ? `o:${item.order.id}`
+              : `p:${item.order.id}`
         }
         stickySectionHeadersEnabled={false}
         contentContainerStyle={[
@@ -148,7 +163,7 @@ export function BillsScreen() {
               now={now}
               onPress={() => setSelectedBillId(item.bill.id)}
             />
-          ) : (
+          ) : item.kind === "order" ? (
             <OrderCard
               order={item.order}
               label={orderLabel(item.order)}
@@ -156,6 +171,12 @@ export function BillsScreen() {
               busy={generatingId === item.order.id}
               disabled={generatingId !== null}
               onPress={() => handleGenerate(item.order)}
+            />
+          ) : (
+            <PreparingCard
+              order={item.order}
+              label={orderLabel(item.order)}
+              now={now}
             />
           )
         }
@@ -266,6 +287,39 @@ function OrderCard({
         )}
       </View>
     </Pressable>
+  );
+}
+
+/** Kitchen still cooking: visible so the cashier knows the table exists, but
+ *  greyed out and not tappable — it cannot be billed until every ticket is
+ *  completed (it then moves to "Ready to bill" automatically). */
+function PreparingCard({
+  order,
+  label,
+  now,
+}: {
+  order: Order & { id: string };
+  label: string;
+  now: number;
+}) {
+  const createdMs = order.createdAt?.toMillis() ?? null;
+  return (
+    <View style={[styles.card, styles.cardDim]}>
+      <View style={styles.cardTop}>
+        <Text style={styles.cardTitleText}>{label}</Text>
+        <View style={[styles.pill, { backgroundColor: colors.amberSoft }]}>
+          <Text style={[styles.pillText, { color: colors.amberText }]}>
+            Preparing…
+          </Text>
+        </View>
+      </View>
+      <View style={styles.cardBottom}>
+        <Text style={styles.cardTotal}>{formatMoney(order.subtotal)}</Text>
+        {createdMs !== null && (
+          <Text style={styles.cardTime}>{timeAgo(createdMs, now)}</Text>
+        )}
+      </View>
+    </View>
   );
 }
 

@@ -8,9 +8,12 @@
  */
 import {
   addDoc,
+  getDocs,
+  query,
   runTransaction,
   serverTimestamp,
   updateDoc,
+  where,
   writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -32,9 +35,42 @@ function linesOf(order: Order): BillLine[] {
 }
 
 /**
+ * "Food first, pay after" backstop: refuse to bill unless every line was sent
+ * to the kitchen and every KOT ticket for the order is `completed`. The
+ * cashier UI already hides such orders; this guard catches anything that
+ * slips past it (stale snapshot, other call sites).
+ */
+async function assertKitchenDone(order: Order): Promise<void> {
+  const unsent = order.items.some(
+    (i) => !i.voided && i.qty > 0 && i.kotStatus === "pending"
+  );
+  if (unsent) {
+    throw new Error(
+      "Some items haven't been sent to the kitchen yet. Send the KOT first."
+    );
+  }
+  const kotsSnap = await getDocs(
+    query(paths.kots(), where("orderId", "==", order.id))
+  );
+  if (kotsSnap.empty) {
+    throw new Error(
+      "Nothing has been sent to the kitchen for this order yet."
+    );
+  }
+  const unfinished = kotsSnap.docs.some((d) => d.data().status !== "completed");
+  if (unfinished) {
+    throw new Error(
+      "The kitchen is still preparing this order. Bill it once all tickets are completed."
+    );
+  }
+}
+
+/**
  * Create a finalized bill for an open order (cashier-initiated), or return the
  * existing bill id if the order already has one. Marks the order `billed` and
  * the table `billed` so the floor view reflects it live.
+ *
+ * Only runs for kitchen-done orders — see `assertKitchenDone`.
  */
 export async function generateBill(
   order: Order,
@@ -42,6 +78,8 @@ export async function generateBill(
   tableLabel: string
 ): Promise<string> {
   if (order.billId) return order.billId;
+
+  await assertKitchenDone(order);
 
   const totals = computeBill(linesOf(order), 0);
   const billsCol = paths.bills();
