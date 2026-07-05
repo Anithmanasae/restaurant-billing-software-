@@ -23,6 +23,15 @@ export const colors = {
 
   amberSoft: "#fdecc8",
   amberText: "#92600a",
+
+  // KDS status system: red = active first-round order, orange = table has an
+  // additional round, green = completed.
+  statusRed: "#d92d20",
+  statusRedSoft: "#fdeceb",
+  statusOrange: "#f79009",
+  statusOrangeSoft: "#fdf1dc",
+  statusGreen: "#17a05e",
+  statusGreenSoft: "#e4f5ec",
 } as const;
 
 /** 4px spacing scale. */

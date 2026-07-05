@@ -1,62 +1,65 @@
 /**
- * Kitchen Display (KDS) — live board of active kitchen tickets.
+ * Kitchen Display (KDS) — live per-table board with the red/orange/green
+ * status system.
  *
- * Real-time by default: subscribes (via the ported `useCollectionData` hook) to
- * every KOT whose status is still on the board (`new` / `preparing` / `ready`),
- * ordered oldest-first, so new tickets appear the instant a waiter fires them.
- * Filter tabs (Live / Urgent / Ready) recompute against a shared once-per-second
- * `useNow()` tick. All writes go through the ported `kdsApi` helpers.
+ * Three color-coded tabs with live counts:
+ *   ORDERS (red)      — every table with an active ticket (new/preparing/ready)
+ *   ADDITIONAL (orange) — tables with a 2nd+ active ticket (a later round)
+ *   COMPLETED (green) — today's completed tickets, newest first
+ *
+ * Cards are one per table (see groupKots) in a 3-column grid sized so exactly
+ * 3 rows fit the screen; the list scrolls to reveal more tables. Fully
+ * real-time via the ported hooks; writes only through kdsApi.
  */
 import { useMemo, useState } from "react";
 import {
-  View,
-  Text,
+  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
-  ActivityIndicator,
+  Text,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Svg, { Path } from "react-native-svg";
-import { query, where, orderBy } from "firebase/firestore";
+import { orderBy, query, Timestamp, where } from "firebase/firestore";
 import { paths } from "@/lib/firestore/paths";
 import { useCollectionData } from "@/lib/firestore/useRealtime";
-import { colors, space, radius } from "@/theme/theme";
+import { startOfDayIST } from "@/lib/date";
+import { colors, radius, space } from "@/theme/theme";
 import type { Kot } from "@/types/models";
-import { useNow, elapsedMs, URGENT_MS } from "./useElapsed";
-import { TicketCard } from "./TicketCard";
+import { useNow } from "./useElapsed";
+import {
+  completedGroups,
+  groupActiveKots,
+  hasAdditionalRound,
+  type TableGroup,
+} from "./groupKots";
+import { TableTicketCard } from "./TableTicketCard";
+import { TicketDetailSheet } from "./TicketDetailSheet";
 
-type LiveKot = Kot & { id: string };
-type Tab = "live" | "urgent" | "ready";
+const COLS = 3;
+const ROWS = 3;
+const GAP = space.s2;
 
-function BellIcon() {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"
-        stroke={colors.text}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M13.73 21a2 2 0 0 1-3.46 0"
-        stroke={colors.text}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
+type Tab = "orders" | "additional" | "completed";
+
+type GridEntry = TableGroup | { key: string; spacer: true };
+
+const EMPTY_COPY: Record<Tab, string> = {
+  orders: "No active orders — new KOTs appear here instantly.",
+  additional: "No table has an additional round right now.",
+  completed: "No completed tickets yet today.",
+};
 
 export function KitchenDisplayScreen() {
   const insets = useSafeAreaInsets();
   const now = useNow();
-  const [tab, setTab] = useState<Tab>("live");
+  const [tab, setTab] = useState<Tab>("orders");
+  const [gridH, setGridH] = useState(0);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
-  // Memoized live query — identity stable across renders (empty deps).
-  const kotsQuery = useMemo(
+  // Live queries — identity stable across renders.
+  const activeQuery = useMemo(
     () =>
       query(
         paths.kots(),
@@ -65,64 +68,98 @@ export function KitchenDisplayScreen() {
       ),
     []
   );
+  const dayStart = useMemo(() => Timestamp.fromDate(startOfDayIST()), []);
+  const completedQuery = useMemo(
+    () =>
+      query(
+        paths.kots(),
+        where("status", "==", "completed"),
+        where("createdAt", ">=", dayStart),
+        orderBy("createdAt", "asc")
+      ),
+    [dayStart]
+  );
 
-  const { data: kots, loading, error } = useCollectionData<Kot>(kotsQuery);
+  const activeState = useCollectionData<Kot>(activeQuery);
+  const completedState = useCollectionData<Kot>(completedQuery);
 
-  // Derived buckets + live counts.
-  const { liveKots, urgentKots, readyKots } = useMemo(() => {
-    const live: LiveKot[] = [];
-    const urgent: LiveKot[] = [];
-    const ready: LiveKot[] = [];
-    for (const k of kots) {
-      if (k.status === "ready") {
-        ready.push(k);
-      } else if (k.status === "new" || k.status === "preparing") {
-        live.push(k);
-        if (elapsedMs(k.createdAt, now) > URGENT_MS) urgent.push(k);
-      }
-    }
-    return { liveKots: live, urgentKots: urgent, readyKots: ready };
-  }, [kots, now]);
+  const activeGroups = useMemo(
+    () => groupActiveKots(activeState.data),
+    [activeState.data]
+  );
+  const additionalGroups = useMemo(
+    () => activeGroups.filter(hasAdditionalRound),
+    [activeGroups]
+  );
+  const doneGroups = useMemo(
+    () => completedGroups(completedState.data),
+    [completedState.data]
+  );
 
   const visible =
-    tab === "live" ? liveKots : tab === "urgent" ? urgentKots : readyKots;
+    tab === "orders"
+      ? activeGroups
+      : tab === "additional"
+        ? additionalGroups
+        : doneGroups;
+
+  // Pad the last row so a lone card doesn't stretch across the grid.
+  const gridData: GridEntry[] = useMemo(() => {
+    const d: GridEntry[] = [...visible];
+    while (d.length % COLS !== 0) d.push({ key: `spacer-${d.length}`, spacer: true });
+    return d;
+  }, [visible]);
+
+  // Exactly ROWS rows visible: card height derived from the measured grid.
+  const cardH = gridH > 0 ? Math.floor((gridH - ROWS * GAP) / ROWS) : 0;
+
+  // Detail sheet target, resolved live so it tracks (and auto-closes on)
+  // realtime changes — e.g. completing from the sheet removes the group.
+  const selectedGroup = useMemo(() => {
+    if (!selectedKey) return null;
+    return (
+      activeGroups.find((g) => g.key === selectedKey) ??
+      doneGroups.find((g) => g.key === selectedKey) ??
+      null
+    );
+  }, [selectedKey, activeGroups, doneGroups]);
+
+  const loading = activeState.loading || completedState.loading;
+  const error = activeState.error ?? completedState.error;
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {/* App header */}
       <View style={styles.appBar}>
         <Text style={styles.brand}>SADA POS</Text>
-        <BellIcon />
+        <Text style={styles.kitchenTag}>KITCHEN</Text>
       </View>
 
-      {/* Title */}
-      <View style={styles.titleBlock}>
-        <Text style={styles.title}>Kitchen Display</Text>
-        <Text style={styles.subtitle}>
-          Manage active orders across all stations.
-        </Text>
-      </View>
-
-      {/* Filter tabs */}
+      {/* Status tabs */}
       <View style={styles.tabs}>
-        <TabButton
-          label="Live"
-          count={liveKots.length}
-          active={tab === "live"}
-          showDot
-          onPress={() => setTab("live")}
+        <StatusTab
+          label="ORDERS"
+          count={activeGroups.length}
+          color={colors.statusRed}
+          soft={colors.statusRedSoft}
+          active={tab === "orders"}
+          onPress={() => setTab("orders")}
         />
-        <TabButton
-          label="Urgent"
-          count={urgentKots.length}
-          active={tab === "urgent"}
-          onPress={() => setTab("urgent")}
+        <StatusTab
+          label="ADDITIONAL"
+          count={additionalGroups.length}
+          color={colors.statusOrange}
+          soft={colors.statusOrangeSoft}
+          active={tab === "additional"}
+          onPress={() => setTab("additional")}
         />
-        <TabButton
-          label="Ready"
-          count={readyKots.length}
-          active={tab === "ready"}
-          onPress={() => setTab("ready")}
+        <StatusTab
+          label="COMPLETED"
+          count={doneGroups.length}
+          color={colors.statusGreen}
+          soft={colors.statusGreenSoft}
+          active={tab === "completed"}
+          onPress={() => setTab("completed")}
         />
       </View>
 
@@ -137,56 +174,86 @@ export function KitchenDisplayScreen() {
           <Text style={styles.emptySub}>{error.message}</Text>
         </View>
       ) : (
-        <FlatList
-          data={visible}
-          keyExtractor={(k) => k.id}
-          renderItem={({ item }) => <TicketCard kot={item} now={now} />}
-          contentContainerStyle={[
-            styles.listContent,
-            { paddingBottom: insets.bottom + space.s6 },
-          ]}
-          ItemSeparatorComponent={() => <View style={{ height: space.s3 }} />}
-          ListEmptyComponent={
-            <View style={styles.center}>
-              <Text style={styles.emptyText}>No tickets here.</Text>
-              <Text style={styles.emptySub}>
-                {tab === "urgent"
-                  ? "Nothing has crossed the urgent threshold."
-                  : tab === "ready"
-                    ? "No tickets are ready to serve."
-                    : "New orders will appear here instantly."}
-              </Text>
-            </View>
-          }
-          showsVerticalScrollIndicator={false}
+        <View
+          style={styles.gridWrap}
+          onLayout={(e) => setGridH(e.nativeEvent.layout.height)}
+        >
+          {cardH > 0 && (
+            <FlatList
+              data={gridData}
+              keyExtractor={(g) => g.key}
+              numColumns={COLS}
+              columnWrapperStyle={styles.gridRow}
+              contentContainerStyle={{
+                flexGrow: 1, // lets the empty state center itself
+                paddingBottom: insets.bottom + space.s4,
+              }}
+              showsVerticalScrollIndicator={false}
+              renderItem={({ item }) =>
+                "spacer" in item ? (
+                  <View style={styles.cell} />
+                ) : (
+                  <View style={[styles.cell, { height: cardH }]}>
+                    <TableTicketCard
+                      group={item}
+                      now={now}
+                      onPress={() => setSelectedKey(item.key)}
+                    />
+                  </View>
+                )
+              }
+              ListEmptyComponent={
+                <View style={styles.center}>
+                  <Text style={styles.emptyText}>Nothing here.</Text>
+                  <Text style={styles.emptySub}>{EMPTY_COPY[tab]}</Text>
+                </View>
+              }
+            />
+          )}
+        </View>
+      )}
+
+      {/* Tap-a-card detail popup */}
+      {selectedGroup && (
+        <TicketDetailSheet
+          group={selectedGroup}
+          now={now}
+          onClose={() => setSelectedKey(null)}
         />
       )}
     </View>
   );
 }
 
-function TabButton({
+function StatusTab({
   label,
   count,
+  color,
+  soft,
   active,
-  showDot,
   onPress,
 }: {
   label: string;
   count: number;
+  color: string;
+  soft: string;
   active: boolean;
-  showDot?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       onPress={onPress}
-      style={[styles.tab, active && styles.tabActive]}
+      style={[
+        styles.tab,
+        active && { backgroundColor: soft, borderColor: color },
+      ]}
     >
-      {showDot && active && <View style={styles.tabDot} />}
-      <Text style={[styles.tabText, active && styles.tabTextActive]}>
-        {label} ({count})
+      <Text style={[styles.tabLabel, { color }]} numberOfLines={1}>
+        {label}
       </Text>
+      <View style={[styles.tabBadge, { backgroundColor: color }]}>
+        <Text style={styles.tabBadgeText}>{count}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -209,58 +276,60 @@ const styles = StyleSheet.create({
     color: colors.primary,
     letterSpacing: 0.5,
   },
-  titleBlock: {
-    paddingHorizontal: space.s4,
-    paddingBottom: space.s3,
-    gap: space.s1,
-  },
-  title: {
-    fontSize: 24,
+  kitchenTag: {
+    fontSize: 12,
     fontWeight: "800",
-    color: colors.text,
-  },
-  subtitle: {
-    fontSize: 13,
     color: colors.textMuted,
+    letterSpacing: 1,
   },
   tabs: {
     flexDirection: "row",
-    gap: space.s2,
+    gap: GAP,
     paddingHorizontal: space.s4,
     paddingBottom: space.s3,
   },
   tab: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: space.s1,
-    paddingHorizontal: space.s3,
     paddingVertical: space.s2,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
+    paddingHorizontal: space.s1,
+    borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  tabActive: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary,
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+    flexShrink: 1,
   },
-  tabDot: {
-    width: 8,
-    height: 8,
+  tabBadge: {
+    minWidth: 18,
+    height: 18,
     borderRadius: radius.pill,
-    backgroundColor: colors.primary,
+    paddingHorizontal: 4,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  tabText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: colors.textMuted,
+  tabBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: colors.textInverse,
   },
-  tabTextActive: {
-    color: colors.primaryDark,
-  },
-  listContent: {
+  gridWrap: {
+    flex: 1,
     paddingHorizontal: space.s4,
-    paddingTop: space.s1,
+  },
+  gridRow: {
+    gap: GAP,
+    marginBottom: GAP,
+  },
+  cell: {
+    flex: 1,
   },
   center: {
     flex: 1,

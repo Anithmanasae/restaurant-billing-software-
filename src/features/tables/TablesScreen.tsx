@@ -25,12 +25,12 @@ import { paths } from "@/lib/firestore/paths";
 import { useCollectionData } from "@/lib/firestore/useRealtime";
 import { formatMoney } from "@/lib/money";
 import { colors, radius, shadow, space } from "@/theme/theme";
-import type { Order, OrderItem, Table, TableStatus } from "@/types/models";
+import type { Kot, Order, OrderItem, Table, TableStatus } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
+import { KotAlertBanner, useKotStatusAlerts } from "@/features/order/kotAlerts";
 import {
   closeTable,
   mergeTables,
-  openTable,
   shiftTable,
   splitTable,
 } from "./tablesApi";
@@ -72,6 +72,21 @@ export function TablesScreen() {
   );
   const { data: tables, loading } = useCollectionData<Table>(tablesQuery);
   const { data: orders } = useCollectionData<Order>(ordersQuery);
+
+  // Kitchen progress toast: watch every active ticket, but only alert for
+  // tables whose order belongs to this waiter ("T1 — Order READY").
+  const kotsQuery = useMemo(
+    () =>
+      query(paths.kots(), where("status", "in", ["new", "preparing", "ready"])),
+    []
+  );
+  const { data: kots } = useCollectionData<Kot>(kotsQuery);
+  const myOrderIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const o of orders) if (o.waiterId === waiterId) ids.add(o.id);
+    return ids;
+  }, [orders, waiterId]);
+  const kotAlert = useKotStatusAlerts(kots, (k) => myOrderIds.has(k.orderId));
 
   // tableId -> its running order
   const orderByTable = useMemo(() => {
@@ -148,18 +163,14 @@ export function TablesScreen() {
   }
 
   function handleCardPress(t: Table & { id: string }) {
-    setSelectedId(t.id);
     if (t.status === "available" && !t.mergedInto) {
-      // Fast path: open the table straight away.
-      void run(
-        async () => {
-          await openTable(t.id, waiterId);
-          router.push("/order/" + t.id);
-        },
-        closeSheet
-      );
+      // Fast path: straight to the order screen, no write needed here — the
+      // first item added creates the order and flips the table to occupied
+      // (orderApi.createOrderLocal), keeping order creation in one place.
+      router.push("/order/" + t.id);
       return;
     }
+    setSelectedId(t.id);
     setSheet("actions");
   }
 
@@ -306,6 +317,9 @@ export function TablesScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Live kitchen status toast */}
+      <KotAlertBanner alert={kotAlert} topOffset={insets.top + space.s2} />
     </View>
   );
 }
@@ -343,7 +357,10 @@ function TableCard({
   const createdMs = order?.createdAt ? order.createdAt.toMillis() : null;
 
   return (
-    <Pressable style={cardStyle} onPress={onPress}>
+    <Pressable
+      style={({ pressed }) => [...cardStyle, pressed && styles.cardPressed]}
+      onPress={onPress}
+    >
       <View style={styles.cardTopRow}>
         <Text style={nameStyle}>{tableName(table)}</Text>
         <StatusPill status={status} />
@@ -741,6 +758,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceMuted,
     borderColor: colors.borderStrong,
   },
+  cardPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
   cardTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",

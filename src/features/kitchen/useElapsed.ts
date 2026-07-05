@@ -27,6 +27,16 @@ export function elapsedMs(createdAt: Ts, now: number): number {
   return Math.max(0, now - createdAt.toDate().getTime());
 }
 
+/** Coarse "time since" label: "just now" / "28m ago" / "1h 5m ago". */
+export function agoLabel(ms: number): string {
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h ago` : `${h}h ${m}m ago`;
+}
+
 /** Format a millisecond duration as `MM:SS` (or `H:MM:SS` past an hour). */
 export function formatElapsed(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
