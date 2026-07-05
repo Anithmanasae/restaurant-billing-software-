@@ -100,7 +100,11 @@ export function CategoryManager({
         <View style={[styles.sheet, { paddingBottom: insets.bottom + space.s4 }]}>
           <View style={styles.header}>
             <Text style={styles.title}>Categories</Text>
-            <Pressable hitSlop={8} onPress={onClose}>
+            <Pressable
+              hitSlop={8}
+              style={({ pressed }) => pressed && styles.pressed}
+              onPress={onClose}
+            >
               <Text style={styles.close}>✕</Text>
             </Pressable>
           </View>
@@ -115,7 +119,10 @@ export function CategoryManager({
               onSubmitEditing={handleAdd}
               returnKeyType="done"
             />
-            <Pressable style={styles.addBtn} onPress={handleAdd}>
+            <Pressable
+              style={({ pressed }) => [styles.addBtn, pressed && styles.pressed]}
+              onPress={handleAdd}
+            >
               <Text style={styles.addBtnText}>Add</Text>
             </Pressable>
           </View>
@@ -133,7 +140,8 @@ export function CategoryManager({
                 <View key={c.id} style={styles.row}>
                   <View style={styles.reorder}>
                     <Pressable
-                      hitSlop={6}
+                      hitSlop={8}
+                      style={({ pressed }) => pressed && styles.pressed}
                       disabled={index === 0}
                       onPress={() => move(index, -1)}
                     >
@@ -147,7 +155,8 @@ export function CategoryManager({
                       </Text>
                     </Pressable>
                     <Pressable
-                      hitSlop={6}
+                      hitSlop={8}
+                      style={({ pressed }) => pressed && styles.pressed}
                       disabled={index === categories.length - 1}
                       onPress={() => move(index, 1)}
                     >
@@ -175,7 +184,10 @@ export function CategoryManager({
                     />
                   ) : (
                     <Pressable
-                      style={styles.nameWrap}
+                      style={({ pressed }) => [
+                        styles.nameWrap,
+                        pressed && styles.pressed,
+                      ]}
                       onPress={() => {
                         setEditingId(c.id);
                         setEditingName(c.name);
@@ -201,7 +213,8 @@ export function CategoryManager({
                   />
 
                   <Pressable
-                    hitSlop={6}
+                    hitSlop={8}
+                    style={({ pressed }) => pressed && styles.pressed}
                     onPress={() => run(() => deleteMenuCategory(c.id))}
                   >
                     <Text style={styles.delete}>Delete</Text>
@@ -220,6 +233,9 @@ export function CategoryManager({
 }
 
 const styles = StyleSheet.create({
+  pressed: {
+    opacity: 0.7,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",

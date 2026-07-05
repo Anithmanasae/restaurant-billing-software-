@@ -22,6 +22,7 @@ import {
   View,
 } from "react-native";
 import { formatMoney } from "@/lib/money";
+import { tapFeedback } from "@/lib/feedback";
 import { colors, radius, shadow, space } from "@/theme/theme";
 import type { PaymentMode } from "@/types/models";
 import { reprintBill, settleBill } from "./cashierApi";
@@ -77,6 +78,7 @@ export function BillDetail({
 
   function onSettle() {
     if (!bill || !order || !selectedMode) return;
+    tapFeedback();
     void run("settle", async () => {
       await settleBill(bill, order, selectedMode);
       onClose();
@@ -107,7 +109,11 @@ export function BillDetail({
             {isPaid ? `Paid via ${paymentLabel(bill.paymentMode!)}` : "Open bill"}
           </Text>
         </View>
-        <Pressable style={styles.closeBtn} onPress={onClose} hitSlop={8}>
+        <Pressable
+          style={({ pressed }) => [styles.closeBtn, pressed && styles.pressed]}
+          onPress={onClose}
+          hitSlop={8}
+        >
           <Text style={styles.closeBtnText}>Close</Text>
         </Pressable>
       </View>
@@ -162,7 +168,11 @@ export function BillDetail({
               return (
                 <Pressable
                   key={t.mode}
-                  style={[styles.tile, active && styles.tileActive]}
+                  style={({ pressed }) => [
+                    styles.tile,
+                    active && styles.tileActive,
+                    pressed && styles.pressed,
+                  ]}
                   onPress={() => !isPaid && setSelectedMode(t.mode)}
                   disabled={isPaid}
                 >
@@ -183,7 +193,7 @@ export function BillDetail({
           <Text style={styles.cardTitle}>Send Receipt</Text>
           <View style={styles.tileRow}>
             <Pressable
-              style={styles.tile}
+              style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
               onPress={onReprint}
               disabled={busy !== null}
             >
@@ -212,7 +222,11 @@ export function BillDetail({
           </View>
         ) : (
           <Pressable
-            style={[styles.settleBtn, !canSettle && styles.settleBtnDisabled]}
+            style={({ pressed }) => [
+              styles.settleBtn,
+              !canSettle && styles.settleBtnDisabled,
+              pressed && styles.pressedScale,
+            ]}
             onPress={onSettle}
             disabled={!canSettle}
           >
@@ -243,6 +257,8 @@ function Row({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
+  pressed: { opacity: 0.7 },
+  pressedScale: { opacity: 0.7, transform: [{ scale: 0.98 }] },
   centered: {
     flex: 1,
     alignItems: "center",

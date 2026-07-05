@@ -25,7 +25,10 @@ function MenuItemCardImpl({
 }: MenuItemCardProps) {
   return (
     <View style={[styles.card, !item.enabled && styles.cardDisabled]}>
-      <Pressable onPress={() => onEdit(item)}>
+      <Pressable
+        onPress={() => onEdit(item)}
+        style={({ pressed }) => pressed && styles.pressed}
+      >
         {item.imageUrl ? (
           <Image
             style={styles.image}
@@ -67,14 +70,14 @@ function MenuItemCardImpl({
           <View style={styles.actions}>
             <Pressable
               hitSlop={8}
-              style={styles.actionBtn}
+              style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
               onPress={() => onEdit(item)}
             >
               <Text style={styles.actionText}>Edit</Text>
             </Pressable>
             <Pressable
               hitSlop={8}
-              style={styles.actionBtn}
+              style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
               onPress={() => onDelete(item)}
             >
               <Text style={[styles.actionText, styles.deleteText]}>Delete</Text>
@@ -100,6 +103,9 @@ const styles = StyleSheet.create({
   },
   cardDisabled: {
     opacity: 0.6,
+  },
+  pressed: {
+    opacity: 0.7,
   },
   image: {
     width: "100%",

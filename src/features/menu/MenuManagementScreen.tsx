@@ -136,7 +136,7 @@ export function MenuManagementScreen() {
           </Text>
         </View>
         <Pressable
-          style={styles.manageBtn}
+          style={({ pressed }) => [styles.manageBtn, pressed && styles.pressed]}
           onPress={() => setCategoryManagerVisible(true)}
         >
           <Text style={styles.manageBtnText}>Categories</Text>
@@ -164,7 +164,11 @@ export function MenuManagementScreen() {
           contentContainerStyle={styles.chipsRow}
         >
           <Pressable
-            style={[styles.chip, activeCategory === ALL && styles.chipActive]}
+            style={({ pressed }) => [
+              styles.chip,
+              activeCategory === ALL && styles.chipActive,
+              pressed && styles.pressed,
+            ]}
             onPress={() => setActiveCategory(ALL)}
           >
             <Text
@@ -181,7 +185,11 @@ export function MenuManagementScreen() {
             return (
               <Pressable
                 key={c.id}
-                style={[styles.chip, active && styles.chipActive]}
+                style={({ pressed }) => [
+                  styles.chip,
+                  active && styles.chipActive,
+                  pressed && styles.pressed,
+                ]}
                 onPress={() => setActiveCategory(c.id)}
               >
                 <Text
@@ -244,7 +252,11 @@ export function MenuManagementScreen() {
 
       {/* Floating add button */}
       <Pressable
-        style={[styles.fab, { bottom: insets.bottom + space.s4 }]}
+        style={({ pressed }) => [
+          styles.fab,
+          { bottom: insets.bottom + space.s4 },
+          pressed && styles.fabPressed,
+        ]}
         onPress={openAdd}
       >
         <Text style={styles.fabText}>＋ Add Item</Text>
@@ -270,6 +282,13 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  pressed: {
+    opacity: 0.7,
+  },
+  fabPressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.98 }],
   },
   header: {
     flexDirection: "row",

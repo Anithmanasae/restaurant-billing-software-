@@ -54,7 +54,7 @@ function OrderMenuCardImpl({
           {inOrder ? (
             <View style={styles.stepper}>
               <Pressable
-                hitSlop={6}
+                hitSlop={8}
                 style={({ pressed }) => [
                   styles.stepBtn,
                   pressed && styles.btnPressed,
@@ -66,7 +66,7 @@ function OrderMenuCardImpl({
               </Pressable>
               <Text style={styles.stepQty}>{qty}</Text>
               <Pressable
-                hitSlop={6}
+                hitSlop={8}
                 style={({ pressed }) => [
                   styles.stepBtn,
                   pressed && styles.btnPressed,
@@ -79,7 +79,7 @@ function OrderMenuCardImpl({
             </View>
           ) : (
             <Pressable
-              hitSlop={6}
+              hitSlop={8}
               style={({ pressed }) => [
                 styles.addBtn,
                 disabled && styles.addBtnDisabled,

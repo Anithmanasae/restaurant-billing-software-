@@ -231,7 +231,10 @@ function BillCard({
   const meta = statusMeta(bill.status);
   const createdMs = bill.createdAt?.toMillis() ?? null;
   return (
-    <Pressable style={styles.card} onPress={onPress}>
+    <Pressable
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+      onPress={onPress}
+    >
       <View style={styles.cardTop}>
         <Text style={styles.cardTitleText}>{bill.tableLabel}</Text>
         <View style={[styles.pill, { backgroundColor: meta.bg }]}>
@@ -266,7 +269,11 @@ function OrderCard({
   const createdMs = order.createdAt?.toMillis() ?? null;
   return (
     <Pressable
-      style={[styles.card, disabled && !busy && styles.cardDim]}
+      style={({ pressed }) => [
+        styles.card,
+        disabled && !busy && styles.cardDim,
+        pressed && styles.cardPressed,
+      ]}
       onPress={onPress}
       disabled={disabled}
     >
@@ -374,6 +381,7 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   cardDim: { opacity: 0.6 },
+  cardPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
   cardTop: {
     flexDirection: "row",
     justifyContent: "space-between",

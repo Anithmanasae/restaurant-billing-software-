@@ -19,6 +19,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, space } from "@/theme/theme";
 import { formatTimeIST } from "@/lib/date";
+import { animateNextLayout, tapFeedback } from "@/lib/feedback";
 import { ElapsedTime } from "@/components/ElapsedTime";
 import type { Kot, KotItem, KotStatus } from "@/types/models";
 import { reprintKot } from "./kdsApi";
@@ -86,6 +87,8 @@ export function TicketDetailSheet({
   const anyPreparing = group.tickets.some((t) => t.status === "preparing");
 
   const run = useCallback((write: Promise<unknown>) => {
+    tapFeedback();
+    animateNextLayout(); // the group may leave the board behind the sheet
     write.catch((e) =>
       Alert.alert(
         "Couldn’t update ticket",
@@ -112,7 +115,11 @@ export function TicketDetailSheet({
                 </View>
               )}
             </View>
-            <Pressable onPress={onClose} hitSlop={10} style={styles.closeBtn}>
+            <Pressable
+              onPress={onClose}
+              hitSlop={10}
+              style={({ pressed }) => [styles.closeBtn, pressed && styles.pressed]}
+            >
               <Text style={styles.closeGlyph}>✕</Text>
             </Pressable>
           </View>
@@ -216,6 +223,7 @@ function RoundSection({ kot, round }: { kot: LiveKot; round: number }) {
         </Text>
         <Pressable
           hitSlop={8}
+          style={({ pressed }) => pressed && styles.pressed}
           onPress={() => reprintKot(kot).catch(() => {})}
         >
           <Text style={styles.reprint}>

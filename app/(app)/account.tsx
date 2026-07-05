@@ -18,7 +18,10 @@ export default function AccountRoute() {
           <Text style={styles.roleText}>{profile?.role.toUpperCase()}</Text>
         </View>
       </View>
-      <Pressable style={styles.signOutBtn} onPress={() => signOut()}>
+      <Pressable
+        style={({ pressed }) => [styles.signOutBtn, pressed && styles.pressed]}
+        onPress={() => signOut()}
+      >
         <Text style={styles.signOutText}>Sign Out</Text>
       </Pressable>
     </SafeAreaView>
@@ -61,4 +64,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   signOutText: { color: colors.danger, fontWeight: "700", fontSize: 16 },
+  pressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
 });

@@ -174,7 +174,11 @@ export function TablesScreen() {
             <Pressable
               key={f.key}
               onPress={() => setFilter(f.key)}
-              style={[styles.filterChip, active && styles.filterChipActive]}
+              style={({ pressed }) => [
+                styles.filterChip,
+                active && styles.filterChipActive,
+                pressed && styles.pressed,
+              ]}
             >
               <Text
                 style={[styles.filterText, active && styles.filterTextActive]}
@@ -409,11 +413,12 @@ function ActionButton({
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      style={[
+      style={({ pressed }) => [
         styles.action,
         variant === "primary" && styles.actionPrimary,
         variant === "danger" && styles.actionDanger,
         disabled && styles.actionDisabled,
+        pressed && styles.pressed,
       ]}
     >
       <Text
@@ -516,7 +521,11 @@ function MergeSheet({
         {candidates.map((t) => (
           <Pressable
             key={t.id}
-            style={[styles.pickRow, picked.has(t.id) && styles.pickRowActive]}
+            style={({ pressed }) => [
+              styles.pickRow,
+              picked.has(t.id) && styles.pickRowActive,
+              pressed && styles.pressed,
+            ]}
             onPress={() => toggle(t.id)}
           >
             <Text style={styles.pickLabel}>{tableName(t)}</Text>
@@ -564,7 +573,7 @@ function PickTableSheet({
           tables.map((t) => (
             <Pressable
               key={t.id}
-              style={styles.pickRow}
+              style={({ pressed }) => [styles.pickRow, pressed && styles.pressed]}
               onPress={() => !busy && onPick(t)}
             >
               <Text style={styles.pickLabel}>{tableName(t)}</Text>
@@ -622,9 +631,10 @@ function SplitSheet({
             {activeLines.map((l) => (
               <Pressable
                 key={l.lineId}
-                style={[
+                style={({ pressed }) => [
                   styles.pickRow,
                   lines.has(l.lineId) && styles.pickRowActive,
+                  pressed && styles.pressed,
                 ]}
                 onPress={() => toggleLine(l.lineId)}
               >
@@ -646,9 +656,10 @@ function SplitSheet({
             {freeTables.map((t) => (
               <Pressable
                 key={t.id}
-                style={[
+                style={({ pressed }) => [
                   styles.targetChip,
                   targetId === t.id && styles.targetChipActive,
+                  pressed && styles.pressed,
                 ]}
                 onPress={() => setTargetId(t.id)}
               >
@@ -742,6 +753,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderStrong,
   },
   cardPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  pressed: { opacity: 0.7 },
   cardTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",

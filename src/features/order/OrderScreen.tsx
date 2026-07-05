@@ -31,6 +31,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { formatMoney } from "@/lib/money";
+import { animateNextLayout, tapFeedback } from "@/lib/feedback";
 import { colors, radius, shadow, space } from "@/theme/theme";
 import { useAuth } from "@/features/auth/AuthContext";
 import type { KotStatus, KotItemStatus, MenuItem, OrderItem } from "@/types/models";
@@ -200,6 +201,8 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
 
   const handleAdd = (item: MenuItemDoc) => {
     if (!waiterId || busy) return;
+    tapFeedback();
+    animateNextLayout(); // a new line may enter the order sheet/cart bar
     const mirror = mirrorRef.current;
     if (mirror) {
       const items = mergeItemIntoLines(
@@ -229,6 +232,7 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
   const handleQty = (lineId: string, qty: number) => {
     const mirror = mirrorRef.current;
     if (!mirror || busy) return;
+    if (qty <= 0) animateNextLayout(); // the row is about to leave the list
     const items = setLineQtyInLines(mirror.items, lineId, qty);
     mirrorRef.current = { ...mirror, items };
     track(writeOrderItems(mirror.orderId, items), "Couldn’t update quantity");
@@ -244,6 +248,7 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
 
   const handleSendKot = async () => {
     if (!orderId || pendingCount === 0 || busy) return;
+    tapFeedback();
     setBusy(true);
     try {
       // The KOT transaction reads the order from the SERVER — make sure every
@@ -401,7 +406,11 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
           <View style={[styles.sheet, { paddingBottom: insets.bottom + space.s3 }]}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>🛒 Current Order</Text>
-              <Pressable hitSlop={8} onPress={() => setSheetOpen(false)}>
+              <Pressable
+                hitSlop={8}
+                style={({ pressed }) => pressed && styles.pressed}
+                onPress={() => setSheetOpen(false)}
+              >
                 <Text style={styles.addItemsLink}>＋ Add Items</Text>
               </Pressable>
             </View>

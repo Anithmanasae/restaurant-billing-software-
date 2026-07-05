@@ -52,7 +52,7 @@ function OrderLineRowImpl({ line, onQty, onNotes }: OrderLineRowProps) {
         {editable ? (
           <View style={styles.stepper}>
             <Pressable
-              hitSlop={6}
+              hitSlop={8}
               style={({ pressed }) => [
                 styles.stepBtn,
                 pressed && styles.btnPressed,
@@ -63,7 +63,7 @@ function OrderLineRowImpl({ line, onQty, onNotes }: OrderLineRowProps) {
             </Pressable>
             <Text style={styles.stepQty}>{line.qty}</Text>
             <Pressable
-              hitSlop={6}
+              hitSlop={8}
               style={({ pressed }) => [
                 styles.stepBtn,
                 pressed && styles.btnPressed,

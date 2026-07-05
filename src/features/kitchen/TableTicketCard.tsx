@@ -14,6 +14,7 @@ import { memo, useCallback } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radius, shadow, space } from "@/theme/theme";
 import { formatTimeIST } from "@/lib/date";
+import { animateNextLayout, tapFeedback } from "@/lib/feedback";
 import { ElapsedTime } from "@/components/ElapsedTime";
 import { completeGroup, readyGroup, startGroup } from "./groupActions";
 import {
@@ -60,6 +61,8 @@ export const TableTicketCard = memo(function TableTicketCard({
   const anyPreparing = group.tickets.some((t) => t.status === "preparing");
 
   const run = useCallback((write: Promise<unknown>) => {
+    tapFeedback();
+    animateNextLayout(); // the card may leave/enter a tab on status change
     write.catch((e) =>
       Alert.alert(
         "Couldn’t update ticket",

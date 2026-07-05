@@ -239,9 +239,10 @@ function StatusTab({
   return (
     <Pressable
       onPress={onPress}
-      style={[
+      style={({ pressed }) => [
         styles.tab,
         active && { backgroundColor: soft, borderColor: color },
+        pressed && styles.tabPressed,
       ]}
     >
       <Text style={[styles.tabLabel, { color }]} numberOfLines={1}>
@@ -296,6 +297,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
+  },
+  tabPressed: {
+    opacity: 0.7,
+    transform: [{ scale: 0.98 }],
   },
   tabLabel: {
     fontSize: 11,

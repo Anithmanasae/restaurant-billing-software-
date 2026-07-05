@@ -163,7 +163,11 @@ export function MenuItemForm({
             <Text style={styles.title}>
               {item ? "Edit Item" : "Add Item"}
             </Text>
-            <Pressable hitSlop={8} onPress={onClose}>
+            <Pressable
+              hitSlop={8}
+              style={({ pressed }) => pressed && styles.pressed}
+              onPress={onClose}
+            >
               <Text style={styles.close}>✕</Text>
             </Pressable>
           </View>
@@ -173,7 +177,13 @@ export function MenuItemForm({
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
           >
-            <Pressable style={styles.imagePicker} onPress={pickImage}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.imagePicker,
+                pressed && styles.pressed,
+              ]}
+              onPress={pickImage}
+            >
               {previewUri ? (
                 <Image
                   style={styles.imagePreview}
@@ -188,7 +198,11 @@ export function MenuItemForm({
               )}
             </Pressable>
             {previewUri ? (
-              <Pressable onPress={pickImage}>
+              <Pressable
+                hitSlop={8}
+                style={({ pressed }) => pressed && styles.pressed}
+                onPress={pickImage}
+              >
                 <Text style={styles.changePhoto}>Change photo</Text>
               </Pressable>
             ) : null}
@@ -209,7 +223,11 @@ export function MenuItemForm({
                 return (
                   <Pressable
                     key={c.id}
-                    style={[styles.chip, active && styles.chipActive]}
+                    style={({ pressed }) => [
+                      styles.chip,
+                      active && styles.chipActive,
+                      pressed && styles.pressed,
+                    ]}
                     onPress={() => setCategoryId(c.id)}
                   >
                     <Text
@@ -272,14 +290,23 @@ export function MenuItemForm({
 
           <View style={styles.footer}>
             <Pressable
-              style={[styles.btn, styles.btnGhost]}
+              style={({ pressed }) => [
+                styles.btn,
+                styles.btnGhost,
+                pressed && styles.pressed,
+              ]}
               onPress={onClose}
               disabled={saving}
             >
               <Text style={styles.btnGhostText}>Cancel</Text>
             </Pressable>
             <Pressable
-              style={[styles.btn, styles.btnPrimary, saving && styles.btnDisabled]}
+              style={({ pressed }) => [
+                styles.btn,
+                styles.btnPrimary,
+                saving && styles.btnDisabled,
+                pressed && styles.pressed,
+              ]}
               onPress={handleSave}
               disabled={saving}
             >
@@ -299,6 +326,9 @@ export function MenuItemForm({
 }
 
 const styles = StyleSheet.create({
+  pressed: {
+    opacity: 0.7,
+  },
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",

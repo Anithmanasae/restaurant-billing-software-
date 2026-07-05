@@ -98,7 +98,11 @@ export default function Login() {
           />
           {error && <Text style={styles.error}>{error}</Text>}
           <Pressable
-            style={[styles.button, busy && styles.buttonDisabled]}
+            style={({ pressed }) => [
+              styles.button,
+              busy && styles.buttonDisabled,
+              pressed && styles.buttonPressed,
+            ]}
             onPress={onSubmit}
             disabled={busy}
           >
@@ -144,5 +148,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   buttonDisabled: { opacity: 0.6 },
+  buttonPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
   buttonText: { color: colors.textInverse, fontSize: 16, fontWeight: "700" },
 });
