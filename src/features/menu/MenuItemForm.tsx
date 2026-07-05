@@ -91,7 +91,8 @@ export function MenuItemForm({
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
+      // Keep uploads small so menu grids load fast on restaurant Wi-Fi.
+      quality: 0.6,
       allowsEditing: true,
       aspect: [1, 1],
     });
@@ -189,6 +190,8 @@ export function MenuItemForm({
                   style={styles.imagePreview}
                   source={{ uri: previewUri }}
                   contentFit="cover"
+                  transition={150}
+                  cachePolicy="memory-disk"
                 />
               ) : (
                 <View style={styles.imageEmpty}>

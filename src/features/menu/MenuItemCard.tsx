@@ -35,6 +35,8 @@ function MenuItemCardImpl({
             source={{ uri: item.imageUrl }}
             contentFit="cover"
             transition={150}
+            cachePolicy="memory-disk"
+            recyclingKey={item.id}
           />
         ) : (
           <View style={[styles.image, styles.placeholder]}>
