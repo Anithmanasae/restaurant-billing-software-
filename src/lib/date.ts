@@ -22,6 +22,35 @@ export function startOfDayIST(d: Date = new Date()): Date {
   return new Date(ist.getTime() - IST_OFFSET_MS);
 }
 
+/** Milliseconds elapsed since a Firestore-style Timestamp, given "now". */
+export function elapsedMs(
+  createdAt: { toDate(): Date } | null | undefined,
+  now: number
+): number {
+  if (!createdAt) return 0;
+  return Math.max(0, now - createdAt.toDate().getTime());
+}
+
+/** Coarse "time since" label: "just now" / "28m ago" / "1h 5m ago". */
+export function agoLabel(ms: number): string {
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h ago` : `${h}h ${m}m ago`;
+}
+
+/** Compact duration label: "just now" / "5m" / "1h 20m". */
+export function shortElapsedLabel(ms: number): string {
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
 /** Clock time like "10:04 AM" in IST (manual offset — see note above). */
 export function formatTimeIST(d: Date): string {
   const ist = new Date(d.getTime() + IST_OFFSET_MS);

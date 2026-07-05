@@ -19,10 +19,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, radius, space } from "@/theme/theme";
 import { formatTimeIST } from "@/lib/date";
+import { ElapsedTime } from "@/components/ElapsedTime";
 import type { Kot, KotItem, KotStatus } from "@/types/models";
 import { reprintKot } from "./kdsApi";
 import { completeGroup, readyGroup, startGroup } from "./groupActions";
-import { agoLabel, elapsedMs } from "./useElapsed";
 import {
   additionalItemCount,
   hasAdditionalRound,
@@ -67,11 +67,9 @@ function itemCount(kot: LiveKot): number {
 
 export function TicketDetailSheet({
   group,
-  now,
   onClose,
 }: {
   group: TableGroup;
-  now: number;
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -121,7 +119,7 @@ export function TicketDetailSheet({
           <Text style={styles.subLine}>
             {orderTypeLabel(first.orderType)} · first order{" "}
             {first.createdAt ? formatTimeIST(first.createdAt.toDate()) : "—"} ·{" "}
-            {agoLabel(elapsedMs(first.createdAt, now))} · {totalItems}{" "}
+            <ElapsedTime createdAt={first.createdAt} /> · {totalItems}{" "}
             {totalItems === 1 ? "item" : "items"}
           </Text>
 
@@ -131,7 +129,7 @@ export function TicketDetailSheet({
             showsVerticalScrollIndicator={false}
           >
             {group.tickets.map((t, round) => (
-              <RoundSection key={t.id} kot={t} round={round} now={now} />
+              <RoundSection key={t.id} kot={t} round={round} />
             ))}
           </ScrollView>
 
@@ -194,15 +192,7 @@ export function TicketDetailSheet({
 }
 
 /** One KOT round: header (name · #ticket · status), meta line, full items. */
-function RoundSection({
-  kot,
-  round,
-  now,
-}: {
-  kot: LiveKot;
-  round: number;
-  now: number;
-}) {
+function RoundSection({ kot, round }: { kot: LiveKot; round: number }) {
   const meta = STATUS_META[kot.status];
   const count = itemCount(kot);
   return (
@@ -221,7 +211,7 @@ function RoundSection({
       <View style={styles.roundMeta}>
         <Text style={styles.roundMetaText}>
           {kot.createdAt ? formatTimeIST(kot.createdAt.toDate()) : "—"} ·{" "}
-          {agoLabel(elapsedMs(kot.createdAt, now))} · {count}{" "}
+          <ElapsedTime createdAt={kot.createdAt} /> · {count}{" "}
           {count === 1 ? "item" : "items"}
         </Text>
         <Pressable

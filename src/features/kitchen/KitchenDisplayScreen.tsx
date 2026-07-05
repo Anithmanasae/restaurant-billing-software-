@@ -27,7 +27,6 @@ import { useCollectionData } from "@/lib/firestore/useRealtime";
 import { startOfDayIST } from "@/lib/date";
 import { colors, radius, space } from "@/theme/theme";
 import type { Kot } from "@/types/models";
-import { useNow } from "./useElapsed";
 import {
   completedGroups,
   groupActiveKots,
@@ -53,7 +52,6 @@ const EMPTY_COPY: Record<Tab, string> = {
 
 export function KitchenDisplayScreen() {
   const insets = useSafeAreaInsets();
-  const now = useNow();
   const [tab, setTab] = useState<Tab>("orders");
   const [gridH, setGridH] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -196,7 +194,6 @@ export function KitchenDisplayScreen() {
                   <View style={[styles.cell, { height: cardH }]}>
                     <TableTicketCard
                       group={item}
-                      now={now}
                       onPress={() => setSelectedKey(item.key)}
                     />
                   </View>
@@ -217,7 +214,6 @@ export function KitchenDisplayScreen() {
       {selectedGroup && (
         <TicketDetailSheet
           group={selectedGroup}
-          now={now}
           onClose={() => setSelectedKey(null)}
         />
       )}

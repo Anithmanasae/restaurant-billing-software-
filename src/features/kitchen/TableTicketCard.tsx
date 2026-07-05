@@ -14,8 +14,8 @@ import { memo, useCallback } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { colors, radius, shadow, space } from "@/theme/theme";
 import { formatTimeIST } from "@/lib/date";
+import { ElapsedTime } from "@/components/ElapsedTime";
 import { completeGroup, readyGroup, startGroup } from "./groupActions";
-import { agoLabel, elapsedMs } from "./useElapsed";
 import {
   additionalItemCount,
   hasAdditionalRound,
@@ -26,11 +26,9 @@ const MAX_ITEM_LINES = 3;
 
 export const TableTicketCard = memo(function TableTicketCard({
   group,
-  now,
   onPress,
 }: {
   group: TableGroup;
-  now: number;
   /** Tapping the card (outside the buttons) opens the detail sheet. */
   onPress: () => void;
 }) {
@@ -42,7 +40,6 @@ export const TableTicketCard = memo(function TableTicketCard({
       : colors.statusRed;
 
   const first = group.tickets[0];
-  const ms = elapsedMs(first.createdAt, now);
   const extraCount = additionalItemCount(group);
 
   // Flatten items across rounds; later rounds keep an orange marker.
@@ -106,7 +103,10 @@ export const TableTicketCard = memo(function TableTicketCard({
         ) : (
           <View />
         )}
-        <Text style={[styles.ago, { color: accent }]}>{agoLabel(ms)}</Text>
+        <ElapsedTime
+          createdAt={first.createdAt}
+          style={[styles.ago, { color: accent }]}
+        />
       </View>
 
       {/* Items */}

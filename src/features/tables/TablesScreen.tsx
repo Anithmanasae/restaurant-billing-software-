@@ -6,7 +6,7 @@
  * by status. All writes go through the ported `tablesApi` — this screen never
  * touches Firestore directly.
  */
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -24,6 +24,8 @@ import { router } from "expo-router";
 import { paths } from "@/lib/firestore/paths";
 import { useCollectionData } from "@/lib/firestore/useRealtime";
 import { formatMoney } from "@/lib/money";
+import { shortElapsedLabel } from "@/lib/date";
+import { ElapsedTime } from "@/components/ElapsedTime";
 import { colors, radius, shadow, space } from "@/theme/theme";
 import type { Kot, Order, OrderItem, Table, TableStatus } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -44,16 +46,6 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "occupied", label: "Occupied" },
   { key: "billed", label: "Billed" },
 ];
-
-/** ms -> "5m" / "1h 20m" / "just now". */
-function formatElapsed(fromMs: number, nowMs: number): string {
-  const mins = Math.max(0, Math.floor((nowMs - fromMs) / 60000));
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
-}
 
 function tableName(t: Table): string {
   return t.label ?? `T${t.number}`;
@@ -102,13 +94,6 @@ export function TablesScreen() {
     for (const t of tables) map.set(t.id, t);
     return map;
   }, [tables]);
-
-  // ── Ticking clock for elapsed time (no polling of data — just re-render) ───
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 30000);
-    return () => clearInterval(id);
-  }, []);
 
   // ── Filtering + counts ─────────────────────────────────────────────────────
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -162,7 +147,7 @@ export function TablesScreen() {
     }
   }
 
-  function handleCardPress(t: Table & { id: string }) {
+  const handleCardPress = useCallback((t: Table & { id: string }) => {
     if (t.status === "available" && !t.mergedInto) {
       // Fast path: straight to the order screen, no write needed here — the
       // first item added creates the order and flips the table to occupied
@@ -172,7 +157,7 @@ export function TablesScreen() {
     }
     setSelectedId(t.id);
     setSheet("actions");
-  }
+  }, []);
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -222,8 +207,7 @@ export function TablesScreen() {
             primary={
               item.mergedInto ? tableById.get(item.mergedInto) ?? null : null
             }
-            now={now}
-            onPress={() => handleCardPress(item)}
+            onPress={handleCardPress}
           />
         )}
       />
@@ -328,18 +312,16 @@ export function TablesScreen() {
 // Table card
 // ─────────────────────────────────────────────────────────────────────────────
 
-function TableCard({
+const TableCard = memo(function TableCard({
   table,
   order,
   primary,
-  now,
   onPress,
 }: {
   table: Table & { id: string };
   order: (Order & { id: string }) | null;
   primary: (Table & { id: string }) | null;
-  now: number;
-  onPress: () => void;
+  onPress: (t: Table & { id: string }) => void;
 }) {
   const status = table.status;
   const cardStyle = [
@@ -354,12 +336,10 @@ function TableCard({
     status === "billed" && styles.cardNameMuted,
   ];
 
-  const createdMs = order?.createdAt ? order.createdAt.toMillis() : null;
-
   return (
     <Pressable
       style={({ pressed }) => [...cardStyle, pressed && styles.cardPressed]}
-      onPress={onPress}
+      onPress={() => onPress(table)}
     >
       <View style={styles.cardTopRow}>
         <Text style={nameStyle}>{tableName(table)}</Text>
@@ -379,16 +359,19 @@ function TableCard({
       {order && !table.mergedInto && (
         <View style={styles.cardMeta}>
           <Text style={styles.cardTotal}>{formatMoney(order.subtotal)}</Text>
-          {createdMs !== null && (
-            <Text style={styles.cardElapsed}>
-              {formatElapsed(createdMs, now)}
-            </Text>
+          {order.createdAt && (
+            <ElapsedTime
+              createdAt={order.createdAt}
+              format={shortElapsedLabel}
+              intervalMs={30000}
+              style={styles.cardElapsed}
+            />
           )}
         </View>
       )}
     </Pressable>
   );
-}
+});
 
 function StatusPill({ status }: { status: TableStatus }) {
   const map = {
