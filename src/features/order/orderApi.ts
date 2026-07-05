@@ -8,7 +8,15 @@
  * Money is integer paise everywhere; the order subtotal is recomputed from the
  * line-items on every write via money.ts's rule (Σ price*qty for non-voided).
  */
-import { doc, runTransaction, serverTimestamp } from "firebase/firestore";
+import {
+  Timestamp,
+  doc,
+  runTransaction,
+  serverTimestamp,
+  updateDoc,
+  waitForPendingWrites,
+  writeBatch,
+} from "firebase/firestore";
 import { randomUUID } from "expo-crypto";
 import { db } from "@/lib/firebase";
 import { paths } from "@/lib/firestore/paths";
@@ -42,180 +50,129 @@ export function newOrderLine(menuItemId: string, name: string, price: number): O
     kotStatus: "pending",
     kotId: null,
     voided: false,
-    addedAt: serverTimestamp() as unknown as OrderItem["addedAt"],
+    // Timestamp.now(), not serverTimestamp(): FieldValue sentinels are not
+    // allowed inside array values, and `items` is an array field.
+    addedAt: Timestamp.now(),
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Latency-compensated write path (waiter hot path).
+//
+// `runTransaction` always waits for a full server round-trip and is never
+// echoed into the local cache, so a transactional add lags the UI by network
+// latency on every tap — and fails outright when offline. The helpers below
+// use plain document writes instead: the SDK applies them to the local cache
+// immediately (live snapshots fire with `hasPendingWrites`), so the screen
+// updates in the same frame and writes queue while offline.
+//
+// Trade-off: no read-modify-write guard — concurrent edits to the SAME order
+// from two devices are last-write-wins on the items array. A table is worked
+// from one waiter's device at a time, so that's acceptable for the floor flow;
+// money-critical mutations (send KOT, billing) stay transactional.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Pure: merge one unit of a menu item into a line-set. Increments qty on an
+ *  existing pending, note-less, un-voided line for the item, else appends a
+ *  fresh line — same semantics as addOrCreateOrder's append path. */
+export function mergeItemIntoLines(
+  items: OrderItem[],
+  menuItemId: string,
+  name: string,
+  price: number
+): OrderItem[] {
+  const idx = items.findIndex(
+    (l) =>
+      l.menuItemId === menuItemId &&
+      l.kotStatus === "pending" &&
+      !l.voided &&
+      !l.notes
+  );
+  if (idx >= 0) {
+    return items.map((l, i) => (i === idx ? { ...l, qty: l.qty + 1 } : l));
+  }
+  return [...items, newOrderLine(menuItemId, name, price)];
+}
+
+/** Pure: set a pending line's qty; `qty <= 0` removes the line. */
+export function setLineQtyInLines(
+  items: OrderItem[],
+  lineId: string,
+  qty: number
+): OrderItem[] {
+  if (qty <= 0) return items.filter((l) => l.lineId !== lineId);
+  return items.map((l) => (l.lineId === lineId ? { ...l, qty } : l));
+}
+
+/** Pure: set a line's special-instructions note. */
+export function setLineNotesInLines(
+  items: OrderItem[],
+  lineId: string,
+  notes: string
+): OrderItem[] {
+  return items.map((l) => (l.lineId === lineId ? { ...l, notes } : l));
+}
+
+/** Persist an order's full line-set (subtotal recomputed). Plain write —
+ *  echoes into the local cache instantly. */
+export function writeOrderItems(
+  orderId: string,
+  items: OrderItem[]
+): Promise<void> {
+  return updateDoc(paths.order(orderId), {
+    items,
+    subtotal: subtotalOf(items),
+    updatedAt: serverTimestamp(),
+  });
+}
+
 /**
- * Add a menu item to the active order, creating the order on first add.
- *
- * - Dine-in (`tableId` set): finds the table's `currentOrderId`; if none, opens
- *   a fresh order and flips the table to `occupied` — atomically.
- * - Takeaway (`tableId` null): always creates a new order when `orderId` is
- *   null, otherwise appends to the given order.
- *
- * If the item is already an un-sent (`pending`, un-voided) line with no notes,
- * its qty is incremented instead of adding a duplicate line.
- *
- * Returns the order id (new or existing).
+ * Create a brand-new order containing its first line and (dine-in) occupy the
+ * table — one writeBatch, echoed into the local cache instantly. The order id
+ * is minted client-side and returned synchronously so the caller can keep
+ * editing before the server acknowledges.
  */
-export async function addOrCreateOrder(params: {
-  orderId: string | null;
+export function createOrderLocal(params: {
   tableId: string | null;
-  tableLabel: string;
   orderType: OrderType;
   waiterId: string;
   menuItemId: string;
   name: string;
   price: number;
-}): Promise<string> {
-  const {
-    orderId,
-    tableId,
+}): { orderId: string; items: OrderItem[]; commit: Promise<void> } {
+  const { tableId, orderType, waiterId, menuItemId, name, price } = params;
+  const newOrderRef = doc(paths.orders());
+  const items = [newOrderLine(menuItemId, name, price)];
+
+  const order: Omit<Order, "id"> = {
+    tableId: tableId ?? null,
     orderType,
     waiterId,
-    menuItemId,
-    name,
-    price,
-  } = params;
+    status: "open",
+    items,
+    subtotal: subtotalOf(items),
+    billId: null,
+    createdAt: serverTimestamp() as unknown as Order["createdAt"],
+    updatedAt: serverTimestamp() as unknown as Order["updatedAt"],
+  };
 
-  const line = newOrderLine(menuItemId, name, price);
-
-  return runTransaction(db, async (tx) => {
-    // ── Resolve the target order ref. ──────────────────────────────────────
-    let orderRef = orderId ? paths.order(orderId) : null;
-
-    // Dine-in with no known order: check the table for an existing open order.
-    if (!orderRef && tableId) {
-      const tableSnap = await tx.get(paths.table(tableId));
-      if (!tableSnap.exists()) throw new Error(`Table ${tableId} not found`);
-      const existing = tableSnap.data().currentOrderId;
-      if (existing) orderRef = paths.order(existing);
-    }
-
-    // ── Append to an existing order. ───────────────────────────────────────
-    if (orderRef) {
-      const orderSnap = await tx.get(orderRef);
-      if (orderSnap.exists()) {
-        const order = orderSnap.data();
-        const items = [...order.items];
-
-        // Merge into an existing un-sent, note-less line for the same item.
-        const idx = items.findIndex(
-          (l) =>
-            l.menuItemId === menuItemId &&
-            l.kotStatus === "pending" &&
-            !l.voided &&
-            !l.notes
-        );
-        if (idx >= 0) {
-          items[idx] = { ...items[idx], qty: items[idx].qty + 1 };
-        } else {
-          items.push(line);
-        }
-
-        tx.update(orderRef, {
-          items,
-          subtotal: subtotalOf(items),
-          updatedAt: serverTimestamp(),
-        });
-        return orderRef.id;
-      }
-      // Order pointer was stale (doc missing) — fall through to create anew.
-    }
-
-    // ── Create a brand-new order. ──────────────────────────────────────────
-    const newOrderRef = doc(paths.orders());
-    const order: Omit<Order, "id"> = {
-      tableId: tableId ?? null,
-      orderType,
-      waiterId,
-      status: "open",
-      items: [line],
-      subtotal: subtotalOf([line]),
-      billId: null,
-      createdAt: serverTimestamp() as unknown as Order["createdAt"],
-      updatedAt: serverTimestamp() as unknown as Order["updatedAt"],
-    };
-    tx.set(newOrderRef, order);
-
-    // Dine-in: occupy the table and point it at the new order.
-    if (tableId) {
-      tx.update(paths.table(tableId), {
-        status: "occupied",
-        currentOrderId: newOrderRef.id,
-        updatedAt: serverTimestamp(),
-      });
-    }
-
-    return newOrderRef.id;
-  });
-}
-
-/**
- * Set a line's quantity. `qty <= 0` removes the line entirely. Only un-sent
- * (`pending`) lines are safe to mutate here — sent lines are locked. Subtotal
- * is recomputed from the resulting line-set.
- */
-export async function updateLineQty(
-  orderId: string,
-  lineId: string,
-  qty: number
-): Promise<void> {
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(paths.order(orderId));
-    if (!snap.exists()) throw new Error(`Order ${orderId} not found`);
-
-    let items = snap.data().items;
-    if (qty <= 0) {
-      items = items.filter((l) => l.lineId !== lineId);
-    } else {
-      items = items.map((l) => (l.lineId === lineId ? { ...l, qty } : l));
-    }
-
-    tx.update(paths.order(orderId), {
-      items,
-      subtotal: subtotalOf(items),
+  const batch = writeBatch(db);
+  batch.set(newOrderRef, order);
+  if (tableId) {
+    batch.update(paths.table(tableId), {
+      status: "occupied",
+      currentOrderId: newOrderRef.id,
       updatedAt: serverTimestamp(),
     });
-  });
+  }
+  return { orderId: newOrderRef.id, items, commit: batch.commit() };
 }
 
-/** Set a line's special-instructions note (`OrderItem.notes`). */
-export async function setLineNotes(
-  orderId: string,
-  lineId: string,
-  notes: string
-): Promise<void> {
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(paths.order(orderId));
-    if (!snap.exists()) throw new Error(`Order ${orderId} not found`);
-
-    const items = snap.data().items.map((l) =>
-      l.lineId === lineId ? { ...l, notes } : l
-    );
-
-    tx.update(paths.order(orderId), {
-      items,
-      updatedAt: serverTimestamp(),
-    });
-  });
-}
-
-/** Remove a line from the order (subtotal recomputed). */
-export async function removeLine(orderId: string, lineId: string): Promise<void> {
-  await runTransaction(db, async (tx) => {
-    const snap = await tx.get(paths.order(orderId));
-    if (!snap.exists()) throw new Error(`Order ${orderId} not found`);
-
-    const items = snap.data().items.filter((l) => l.lineId !== lineId);
-
-    tx.update(paths.order(orderId), {
-      items,
-      subtotal: subtotalOf(items),
-      updatedAt: serverTimestamp(),
-    });
-  });
+/** Resolve once every queued local write has been acknowledged by the server.
+ *  Call before transactional ops (send KOT) whose server-side reads must see
+ *  the latest local edits. */
+export function flushPendingWrites(): Promise<void> {
+  return waitForPendingWrites(db);
 }
 
 /**

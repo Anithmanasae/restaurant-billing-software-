@@ -53,7 +53,10 @@ function OrderLineRowImpl({ line, onQty, onNotes }: OrderLineRowProps) {
           <View style={styles.stepper}>
             <Pressable
               hitSlop={6}
-              style={styles.stepBtn}
+              style={({ pressed }) => [
+                styles.stepBtn,
+                pressed && styles.btnPressed,
+              ]}
               onPress={() => onQty(line.qty - 1)}
             >
               <Text style={styles.stepGlyph}>−</Text>
@@ -61,7 +64,10 @@ function OrderLineRowImpl({ line, onQty, onNotes }: OrderLineRowProps) {
             <Text style={styles.stepQty}>{line.qty}</Text>
             <Pressable
               hitSlop={6}
-              style={styles.stepBtn}
+              style={({ pressed }) => [
+                styles.stepBtn,
+                pressed && styles.btnPressed,
+              ]}
               onPress={() => onQty(line.qty + 1)}
             >
               <Text style={styles.stepGlyph}>+</Text>
@@ -150,6 +156,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     lineHeight: 20,
+  },
+  btnPressed: {
+    opacity: 0.55,
+    transform: [{ scale: 0.9 }],
   },
   stepQty: {
     minWidth: 20,

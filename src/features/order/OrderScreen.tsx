@@ -16,9 +16,10 @@
  *     ticket with only the new lines. KDS progress mirrors back onto each line's
  *     `kotStatus` via `syncLineStatuses`.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -34,11 +35,14 @@ import { colors, radius, shadow, space } from "@/theme/theme";
 import { useAuth } from "@/features/auth/AuthContext";
 import type { KotStatus, KotItemStatus, MenuItem, OrderItem } from "@/types/models";
 import {
-  addOrCreateOrder,
+  createOrderLocal,
+  flushPendingWrites,
+  mergeItemIntoLines,
   sendKot,
-  setLineNotes,
+  setLineNotesInLines,
+  setLineQtyInLines,
   syncLineStatuses,
-  updateLineQty,
+  writeOrderItems,
 } from "./orderApi";
 import {
   useKotsForOrder,
@@ -50,6 +54,7 @@ import {
 } from "./useOrderData";
 import { OrderMenuCard } from "./OrderMenuCard";
 import { OrderLineRow } from "./OrderLineRow";
+import { KotAlertBanner, useKotStatusAlerts } from "./kotAlerts";
 
 const ALL = "__all__";
 const SPACER = "__spacer__";
@@ -108,6 +113,9 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
     syncLineStatuses(orderId, map).catch(() => {});
   }, [orderId, kotsState.data]);
 
+  // Kitchen progress toast — every kot here already belongs to this order.
+  const kotAlert = useKotStatusAlerts(kotsState.data);
+
   // ── UI state ────────────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState<string>(ALL);
@@ -165,46 +173,89 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
   const subtotal = order?.subtotal ?? 0;
 
   // ── Writes (all via orderApi) ─────────────────────────────────────────────
-  const handleAdd = async (item: MenuItemDoc) => {
+  // Local mirror of the order being edited. Plain writes echo into the local
+  // cache instantly, and the mirror lets back-to-back taps compute from the
+  // latest local state instead of waiting for the next snapshot. The live
+  // snapshot is re-adopted whenever no local writes are in flight.
+  const mirrorRef = useRef<{ orderId: string; items: OrderItem[] } | null>(
+    null
+  );
+  const inflightRef = useRef(0);
+
+  useEffect(() => {
+    if (inflightRef.current > 0) return; // trust local edits still in flight
+    mirrorRef.current = order ? { orderId: order.id, items: order.items } : null;
+  }, [order]);
+
+  const track = (write: Promise<unknown>, what: string) => {
+    inflightRef.current += 1;
+    write
+      .catch((e) =>
+        Alert.alert(what, e instanceof Error ? e.message : String(e))
+      )
+      .finally(() => {
+        inflightRef.current -= 1;
+      });
+  };
+
+  const handleAdd = (item: MenuItemDoc) => {
     if (!waiterId || busy) return;
-    setBusy(true);
-    try {
-      const id = await addOrCreateOrder({
-        orderId,
+    const mirror = mirrorRef.current;
+    if (mirror) {
+      const items = mergeItemIntoLines(
+        mirror.items,
+        item.id,
+        item.name,
+        item.price
+      );
+      mirrorRef.current = { ...mirror, items };
+      track(writeOrderItems(mirror.orderId, items), "Couldn’t add item");
+    } else {
+      // First add: mint the order (and occupy the table) in one local batch.
+      const created = createOrderLocal({
         tableId: tableId ?? null,
-        tableLabel,
         orderType,
         waiterId,
         menuItemId: item.id,
         name: item.name,
         price: item.price,
       });
-      if (!isDineIn) setTakeawayOrderId(id);
-    } catch {
-      // Swallow — the live subscription is the source of truth; a failed write
-      // simply leaves the order unchanged.
-    } finally {
-      setBusy(false);
+      mirrorRef.current = { orderId: created.orderId, items: created.items };
+      if (!isDineIn) setTakeawayOrderId(created.orderId);
+      track(created.commit, "Couldn’t add item");
     }
   };
 
   const handleQty = (lineId: string, qty: number) => {
-    if (!orderId) return;
-    updateLineQty(orderId, lineId, qty).catch(() => {});
+    const mirror = mirrorRef.current;
+    if (!mirror || busy) return;
+    const items = setLineQtyInLines(mirror.items, lineId, qty);
+    mirrorRef.current = { ...mirror, items };
+    track(writeOrderItems(mirror.orderId, items), "Couldn’t update quantity");
   };
 
   const handleNotes = (lineId: string, notes: string) => {
-    if (!orderId) return;
-    setLineNotes(orderId, lineId, notes).catch(() => {});
+    const mirror = mirrorRef.current;
+    if (!mirror || busy) return;
+    const items = setLineNotesInLines(mirror.items, lineId, notes);
+    mirrorRef.current = { ...mirror, items };
+    track(writeOrderItems(mirror.orderId, items), "Couldn’t save note");
   };
 
   const handleSendKot = async () => {
     if (!orderId || pendingCount === 0 || busy) return;
     setBusy(true);
     try {
+      // The KOT transaction reads the order from the SERVER — make sure every
+      // local (latency-compensated) edit has landed there first.
+      await flushPendingWrites();
       await sendKot(orderId, tableLabel);
-    } catch {
-      // no-op; lines stay pending on failure.
+    } catch (e) {
+      // Lines stay pending on failure — tell the waiter so they can retry.
+      Alert.alert(
+        "Couldn’t send KOT",
+        e instanceof Error ? e.message : String(e)
+      );
     } finally {
       setBusy(false);
     }
@@ -223,7 +274,7 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
         <OrderMenuCard
           item={menuItem}
           qty={pending?.qty ?? 0}
-          disabled={busy || !waiterId}
+          disabled={!waiterId}
           onAdd={() => handleAdd(menuItem)}
           onDecrement={() =>
             pending && handleQty(pending.lineId, pending.qty - 1)
@@ -319,7 +370,11 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
       {/* Collapsed cart bar */}
       {lines.length > 0 && !sheetOpen ? (
         <Pressable
-          style={[styles.cartBar, { bottom: insets.bottom + space.s4 }]}
+          style={({ pressed }) => [
+            styles.cartBar,
+            { bottom: insets.bottom + space.s4 },
+            pressed && styles.pressed,
+          ]}
           onPress={() => setSheetOpen(true)}
         >
           <Text style={styles.cartBarText}>
@@ -337,6 +392,8 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
         onRequestClose={() => setSheetOpen(false)}
       >
         <View style={styles.sheetBackdrop}>
+          {/* The modal covers the screen banner, so mirror it here too. */}
+          <KotAlertBanner alert={kotAlert} topOffset={insets.top + space.s2} />
           <Pressable
             style={styles.backdropFill}
             onPress={() => setSheetOpen(false)}
@@ -370,9 +427,10 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
 
             <View style={styles.sheetFooter}>
               <Pressable
-                style={[
+                style={({ pressed }) => [
                   styles.sendBtn,
                   (pendingCount === 0 || busy) && styles.sendBtnDisabled,
+                  pressed && styles.pressed,
                 ]}
                 onPress={handleSendKot}
                 disabled={pendingCount === 0 || busy}
@@ -389,6 +447,9 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
           </View>
         </View>
       </Modal>
+
+      {/* Live kitchen status toast ("T1 — Order READY") */}
+      <KotAlertBanner alert={kotAlert} topOffset={insets.top + space.s2} />
     </View>
   );
 }
@@ -404,7 +465,11 @@ function Chip({
 }) {
   return (
     <Pressable
-      style={[styles.chip, active && styles.chipActive]}
+      style={({ pressed }) => [
+        styles.chip,
+        active && styles.chipActive,
+        pressed && styles.pressed,
+      ]}
       onPress={onPress}
     >
       <Text style={[styles.chipText, active && styles.chipTextActive]}>
@@ -418,6 +483,9 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  pressed: {
+    opacity: 0.7,
   },
   appBar: {
     flexDirection: "row",

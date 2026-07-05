@@ -55,7 +55,10 @@ function OrderMenuCardImpl({
             <View style={styles.stepper}>
               <Pressable
                 hitSlop={6}
-                style={styles.stepBtn}
+                style={({ pressed }) => [
+                  styles.stepBtn,
+                  pressed && styles.btnPressed,
+                ]}
                 onPress={onDecrement}
                 disabled={disabled}
               >
@@ -64,7 +67,10 @@ function OrderMenuCardImpl({
               <Text style={styles.stepQty}>{qty}</Text>
               <Pressable
                 hitSlop={6}
-                style={styles.stepBtn}
+                style={({ pressed }) => [
+                  styles.stepBtn,
+                  pressed && styles.btnPressed,
+                ]}
                 onPress={onAdd}
                 disabled={disabled}
               >
@@ -74,7 +80,11 @@ function OrderMenuCardImpl({
           ) : (
             <Pressable
               hitSlop={6}
-              style={[styles.addBtn, disabled && styles.addBtnDisabled]}
+              style={({ pressed }) => [
+                styles.addBtn,
+                disabled && styles.addBtnDisabled,
+                pressed && styles.btnPressed,
+              ]}
               onPress={onAdd}
               disabled={disabled}
             >
@@ -145,6 +155,10 @@ const styles = StyleSheet.create({
   },
   addBtnDisabled: {
     opacity: 0.5,
+  },
+  btnPressed: {
+    opacity: 0.55,
+    transform: [{ scale: 0.9 }],
   },
   addGlyph: {
     color: colors.textInverse,

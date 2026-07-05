@@ -2,7 +2,7 @@
  * End-to-end test of the "food first, pay after" billing flow against the
  * live dev Firebase project, driving the REAL app modules:
  *
- *   waiter: addOrCreateOrder → sendKot        (orderApi)
+ *   waiter: createOrderLocal / writeOrderItems → sendKot (orderApi)
  *   kitchen: startKot → markReady → completeKot (kdsApi)
  *   cashier: billable derivation (isKitchenDone) + generateBill/settleBill
  *
@@ -15,7 +15,12 @@ import { signInWithEmailAndPassword } from "firebase/auth";
 import { getDoc, getDocs, query, where } from "firebase/firestore";
 import { auth } from "./firebase-shim";
 import { paths } from "@/lib/firestore/paths";
-import { addOrCreateOrder, sendKot } from "@/features/order/orderApi";
+import {
+  createOrderLocal,
+  mergeItemIntoLines,
+  sendKot,
+  writeOrderItems,
+} from "@/features/order/orderApi";
 import { completeKot, markReady, startKot } from "@/features/kitchen/kdsApi";
 import { generateBill, settleBill } from "@/features/cashier/cashierApi";
 import {
@@ -90,16 +95,16 @@ async function main() {
     `table ${TABLE_ID} is free (run again after clearing it if not)`
   );
 
-  const orderId = await addOrCreateOrder({
-    orderId: null,
+  const created = createOrderLocal({
     tableId: TABLE_ID,
-    tableLabel: TABLE_LABEL,
     orderType: "dine-in",
     waiterId: waiterUid,
     menuItemId: "masala-chai",
     name: "Masala Chai",
     price: 4000,
   });
+  await created.commit;
+  const orderId = created.orderId;
   ok(`waiter opened order ${orderId} on ${TABLE_LABEL}`);
 
   // ── Cashier before anything is sent: NOT billable ────────────────────────
@@ -139,16 +144,16 @@ async function main() {
 
   // ── "Added items later": new round drops it out again ────────────────────
   await signIn("waiter");
-  await addOrCreateOrder({
-    orderId,
-    tableId: TABLE_ID,
-    tableLabel: TABLE_LABEL,
-    orderType: "dine-in",
-    waiterId: waiterUid,
-    menuItemId: "gulab-jamun",
-    name: "Gulab Jamun (2 pc)",
-    price: 8000,
-  });
+  {
+    const current = await fetchOrder(orderId);
+    const items = mergeItemIntoLines(
+      current.items,
+      "gulab-jamun",
+      "Gulab Jamun (2 pc)",
+      8000
+    );
+    await writeOrderItems(orderId, items);
+  }
   await signIn("cashier");
   split = await billableSplit();
   assert(!split.ready.includes(orderId), "un-sent second round blocks billing");
