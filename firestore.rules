@@ -56,16 +56,21 @@ service cloud.firestore {
       }
 
       // ---- menu ----------------------------------------------------------
-      // Everyone signed in reads the menu; only admins edit it.
+      // Everyone signed in reads the menu; admins and cashiers edit it
+      // (cashiers manage the day's menu from their Account screen).
+      // Delete is split out because request.resource does not exist on
+      // delete requests, so the price check would wrongly deny them.
       match /menuCategories/{categoryId} {
         allow read: if signedIn();
-        allow write: if isAdmin();
+        allow create, update: if hasAnyRole(['admin', 'cashier']);
+        allow delete: if hasAnyRole(['admin', 'cashier']);
       }
       match /menuItems/{itemId} {
         allow read: if signedIn();
-        allow write: if isAdmin()
+        allow create, update: if hasAnyRole(['admin', 'cashier'])
           && request.resource.data.price is int
           && request.resource.data.price >= 0;
+        allow delete: if hasAnyRole(['admin', 'cashier']);
       }
 
       // ---- tables --------------------------------------------------------
@@ -77,11 +82,11 @@ service cloud.firestore {
       }
 
       // ---- orders --------------------------------------------------------
-      // Waiters create/edit their orders; cashiers/admins can also touch them
-      // (billing, closing). Subtotal must be a non-negative int.
+      // Waiters and cashiers create/edit orders (cashiers take takeaway at
+      // the counter); admins too. Subtotal must be a non-negative int.
       match /orders/{orderId} {
         allow read: if signedIn();
-        allow create: if hasAnyRole(['admin', 'waiter'])
+        allow create: if hasAnyRole(['admin', 'waiter', 'cashier'])
           && request.resource.data.subtotal is int
           && request.resource.data.subtotal >= 0;
         allow update: if hasAnyRole(['admin', 'waiter', 'cashier'])
@@ -91,15 +96,15 @@ service cloud.firestore {
       }
 
       // ---- KOTs ----------------------------------------------------------
-      // Waiters create tickets. Kitchen can ONLY advance status/printedCount,
-      // never edit items or prices.
+      // Floor staff (waiter/cashier) create tickets. Kitchen can ONLY advance
+      // status/printedCount, never edit items or prices.
       match /kots/{kotId} {
         allow read: if signedIn();
-        allow create: if hasAnyRole(['admin', 'waiter']);
+        allow create: if hasAnyRole(['admin', 'waiter', 'cashier']);
         allow update: if isAdmin()
           || (hasRole('kitchen')
               && incomingDiffers(['status', 'printedCount', 'updatedAt']))
-          || (hasAnyRole(['admin', 'waiter'])
+          || (hasAnyRole(['admin', 'waiter', 'cashier'])
               && incomingDiffers(['printedCount', 'updatedAt']));
         allow delete: if isAdmin();
       }

@@ -43,6 +43,8 @@ function ElapsedTimeImpl({
   format = agoLabel,
   intervalMs = 1000,
   style,
+  alertAfterMs,
+  alertStyle,
 }: {
   createdAt: Ts;
   /** ms -> label; defaults to `agoLabel` ("5m ago"). */
@@ -50,20 +52,36 @@ function ElapsedTimeImpl({
   /** Tick granularity; coarse labels can use 30000 to tick less often. */
   intervalMs?: number;
   style?: StyleProp<TextStyle>;
+  /** Once elapsed ≥ this, merge `alertStyle` over `style` (overdue tickets). */
+  alertAfterMs?: number;
+  alertStyle?: StyleProp<TextStyle>;
 }) {
-  const [label, setLabel] = useState(() =>
-    format(elapsedMs(createdAt, Date.now()))
+  const compute = (ms: number) => ({
+    label: format(ms),
+    alert: alertAfterMs != null && ms >= alertAfterMs,
+  });
+  const [state, setState] = useState(() =>
+    compute(elapsedMs(createdAt, Date.now()))
   );
 
   useEffect(() => {
-    const update = () => setLabel(format(elapsedMs(createdAt, Date.now())));
+    const update = () => {
+      const ms = elapsedMs(createdAt, Date.now());
+      const label = format(ms);
+      const alert = alertAfterMs != null && ms >= alertAfterMs;
+      // Returning the same object bails out of re-rendering, so coarse
+      // formats ("5m ago") cost nothing on most ticks.
+      setState((prev) =>
+        prev.label === label && prev.alert === alert ? prev : { label, alert }
+      );
+    };
     update(); // re-sync when the ticket or format changes
     return subscribe(intervalMs, update);
-  }, [createdAt, format, intervalMs]);
+  }, [createdAt, format, intervalMs, alertAfterMs]);
 
-  // setState with an unchanged label bails out of re-rendering, so coarse
-  // formats ("5m ago") cost nothing on most ticks.
-  return <Text style={style}>{label}</Text>;
+  return (
+    <Text style={[style, state.alert && alertStyle]}>{state.label}</Text>
+  );
 }
 
 export const ElapsedTime = memo(ElapsedTimeImpl);

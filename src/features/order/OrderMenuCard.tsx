@@ -1,15 +1,19 @@
 /**
  * A single menu-item card for the Waiter New Order grid.
  *
- * Mirrors the SADA look (square image, name, green price). When the item is an
- * un-sent line in the current order the card gets a green border and swaps the
- * circular `+` add button for an inline `−  qty  +` stepper.
+ * Premium SADA look: a borderless pure-white card with a soft, blurred drop
+ * shadow, a rounded image (Feather placeholder when none), and a green price.
+ * When the item is an un-sent line in the current order the circular `+` add
+ * button becomes a soft-gray `−  qty  +` stepper. Steppers spring on press.
  */
 import { memo } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
+import { Feather } from "@expo/vector-icons";
 import { formatMoney } from "@/lib/money";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { PressableScale } from "@/components/PressableScale";
+import { resolveMenuImage } from "@/features/menu/menuImages";
+import { colors, fonts, radius, shadow, space } from "@/theme/theme";
 import type { MenuItem } from "@/types/models";
 
 interface OrderMenuCardProps {
@@ -29,12 +33,13 @@ function OrderMenuCardImpl({
   disabled,
 }: OrderMenuCardProps) {
   const inOrder = qty > 0;
+  const imageSource = resolveMenuImage(item.id, item.imageUrl);
   return (
-    <View style={[styles.card, inOrder && styles.cardInOrder]}>
-      {item.imageUrl ? (
+    <View style={styles.card}>
+      {imageSource ? (
         <Image
           style={styles.image}
-          source={{ uri: item.imageUrl }}
+          source={imageSource}
           contentFit="cover"
           transition={150}
           cachePolicy="memory-disk"
@@ -42,7 +47,7 @@ function OrderMenuCardImpl({
         />
       ) : (
         <View style={[styles.image, styles.placeholder]}>
-          <Text style={styles.placeholderIcon}>🍽</Text>
+          <Feather name="image" size={26} color={colors.borderStrong} />
         </View>
       )}
 
@@ -55,43 +60,33 @@ function OrderMenuCardImpl({
 
           {inOrder ? (
             <View style={styles.stepper}>
-              <Pressable
+              <PressableScale
                 hitSlop={8}
-                style={({ pressed }) => [
-                  styles.stepBtn,
-                  pressed && styles.btnPressed,
-                ]}
+                style={styles.stepBtn}
                 onPress={onDecrement}
                 disabled={disabled}
               >
                 <Text style={styles.stepGlyph}>−</Text>
-              </Pressable>
+              </PressableScale>
               <Text style={styles.stepQty}>{qty}</Text>
-              <Pressable
+              <PressableScale
                 hitSlop={8}
-                style={({ pressed }) => [
-                  styles.stepBtn,
-                  pressed && styles.btnPressed,
-                ]}
+                style={styles.stepBtn}
                 onPress={onAdd}
                 disabled={disabled}
               >
                 <Text style={styles.stepGlyph}>+</Text>
-              </Pressable>
+              </PressableScale>
             </View>
           ) : (
-            <Pressable
+            <PressableScale
               hitSlop={8}
-              style={({ pressed }) => [
-                styles.addBtn,
-                disabled && styles.addBtnDisabled,
-                pressed && styles.btnPressed,
-              ]}
+              style={[styles.addBtn, disabled && styles.addBtnDisabled]}
               onPress={onAdd}
               disabled={disabled}
             >
               <Text style={styles.addGlyph}>＋</Text>
-            </Pressable>
+            </PressableScale>
           )}
         </View>
       </View>
@@ -105,46 +100,39 @@ const styles = StyleSheet.create({
   card: {
     flex: 1,
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadow.card,
-  },
-  cardInOrder: {
-    borderColor: colors.primary,
-    borderWidth: 2,
+    borderRadius: radius.xl,
+    ...shadow.float,
   },
   image: {
     width: "100%",
     aspectRatio: 1,
-    backgroundColor: colors.surfaceMuted,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    backgroundColor: colors.floor,
   },
   placeholder: {
     alignItems: "center",
     justifyContent: "center",
-  },
-  placeholderIcon: {
-    fontSize: 32,
-    color: colors.textMuted,
   },
   body: {
     padding: space.s3,
     gap: space.s2,
   },
   name: {
+    fontFamily: fonts.semibold,
     fontSize: 15,
-    fontWeight: "600",
     color: colors.text,
   },
   priceRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: space.s2,
   },
   price: {
+    flexShrink: 1,
+    fontFamily: fonts.bold,
     fontSize: 15,
-    fontWeight: "700",
     color: colors.primary,
   },
   addBtn: {
@@ -158,42 +146,36 @@ const styles = StyleSheet.create({
   addBtnDisabled: {
     opacity: 0.5,
   },
-  btnPressed: {
-    opacity: 0.55,
-    transform: [{ scale: 0.9 }],
-  },
   addGlyph: {
     color: colors.textInverse,
     fontSize: 18,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     lineHeight: 20,
   },
   stepper: {
     flexDirection: "row",
     alignItems: "center",
-    gap: space.s2,
+    gap: space.s1,
   },
   stepBtn: {
     width: 28,
     height: 28,
     borderRadius: radius.pill,
-    backgroundColor: colors.primarySoft,
-    borderWidth: 1,
-    borderColor: colors.primary,
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },
   stepGlyph: {
-    color: colors.primaryDark,
-    fontSize: 18,
-    fontWeight: "700",
-    lineHeight: 20,
+    color: colors.text,
+    fontSize: 17,
+    fontFamily: fonts.bold,
+    lineHeight: 19,
   },
   stepQty: {
-    minWidth: 18,
+    minWidth: 14,
     textAlign: "center",
     fontSize: 15,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.text,
   },
 });

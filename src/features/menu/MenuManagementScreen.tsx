@@ -27,6 +27,9 @@ import { CategoryManager } from "./CategoryManager";
 
 const ALL = "__all__";
 
+/** Hard cap on the menu size — keeps grids and realtime listeners snappy. */
+export const MAX_MENU_ITEMS = 1000;
+
 export function MenuManagementScreen() {
   const insets = useSafeAreaInsets();
   const categoriesState = useMenuCategories();
@@ -87,7 +90,16 @@ export function MenuManagementScreen() {
     return ordered;
   }, [filteredItems, categoryById]);
 
+  const atCapacity = itemsState.data.length >= MAX_MENU_ITEMS;
+
   const openAdd = () => {
+    if (atCapacity) {
+      Alert.alert(
+        "Menu is full",
+        `The menu can hold up to ${MAX_MENU_ITEMS} items. Delete an item before adding a new one.`
+      );
+      return;
+    }
     setEditingItem(null);
     setFormCategoryId(
       activeCategory !== ALL ? activeCategory : enabledCategories[0]?.id
@@ -132,7 +144,9 @@ export function MenuManagementScreen() {
         <View style={styles.headerText}>
           <Text style={styles.headerTitle}>Menu Management</Text>
           <Text style={styles.headerSubtitle}>
-            Manage and organize your offerings.
+            {itemsState.loading
+              ? "Manage and organize your offerings."
+              : `${itemsState.data.length} of ${MAX_MENU_ITEMS} items`}
           </Text>
         </View>
         <Pressable

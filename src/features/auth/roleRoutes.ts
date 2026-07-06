@@ -20,9 +20,10 @@ export const homePathForRole = (role: Role): string => {
 /** Which roles are permitted in each module (used by ProtectedRoute). */
 export const ROLE_ACCESS = {
   insights: ["admin", "cashier"] as Role[],
+  // Admin-only as a *tab*; cashiers reach Menu Management via Account → Menu.
   menuAdmin: ["admin"] as Role[],
   tables: ["admin", "waiter", "cashier"] as Role[],
-  order: ["admin", "waiter"] as Role[],
+  order: ["admin", "waiter", "cashier"] as Role[],
   kds: ["admin", "kitchen"] as Role[],
   bills: ["admin", "cashier"] as Role[],
 };

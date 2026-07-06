@@ -26,6 +26,7 @@ import { formatMoney } from "@/lib/money";
 import { colors, radius, shadow, space } from "@/theme/theme";
 import type { Bill, Order, Table } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
+import { useSettings } from "@/features/settings/SettingsContext";
 import { generateBill } from "./cashierApi";
 import {
   useActiveBills,
@@ -62,6 +63,8 @@ export function BillsScreen() {
   const cashierUid = profile?.uid ?? firebaseUser?.uid ?? "";
   const cashierName = profile?.name ?? "Cashier";
   const roleLabel = role ? ROLE_LABELS[role] ?? role : "";
+
+  const { gstEnabled } = useSettings();
 
   const { data: bills, loading: billsLoading } = useActiveBills();
   const {
@@ -112,7 +115,12 @@ export function BillsScreen() {
     if (generatingId) return;
     setGeneratingId(order.id);
     try {
-      const billId = await generateBill(order, cashierUid, orderLabel(order));
+      const billId = await generateBill(
+        order,
+        cashierUid,
+        orderLabel(order),
+        gstEnabled
+      );
       setSelectedBillId(billId);
     } catch (e) {
       Alert.alert("Could not bill", e instanceof Error ? e.message : String(e));

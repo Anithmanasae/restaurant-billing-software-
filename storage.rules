@@ -1,7 +1,7 @@
 rules_version = '2';
 
-// Menu item images: readable by anyone signed in, writable by admins only.
-// Enforce image content type and a 5MB size cap.
+// Menu item images: readable and writable by anyone signed in (menu edits are
+// role-gated in Firestore rules). Enforce image content type and a 5MB cap.
 service firebase.storage {
   match /b/{bucket}/o {
     match /restaurants/{restaurantId}/menu/{itemId}/{fileName} {

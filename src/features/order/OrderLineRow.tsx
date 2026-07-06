@@ -1,15 +1,21 @@
 /**
  * A single line row inside the Current Order sheet.
  *
- * Un-sent (`pending`) lines are editable: a `−  qty  +` stepper (qty 0 removes
- * the line) and a per-line "Special instructions" field mapped to
- * `OrderItem.notes`. Once a line has been fired to the kitchen it locks and
- * shows its live `kotStatus` so the waiter can watch kitchen progress.
+ * Compact one-row layout: name (with unit price + optional note underneath),
+ * the `−  qty  +` stepper, and the line total all sit on one line so the
+ * waiter can review many items without scrolling. The "Special instructions"
+ * field is opt-in — it only expands when the waiter taps "✎ Add note" (or an
+ * existing note), and collapses back to inline text once editing ends.
+ *
+ * Un-sent (`pending`) lines are editable (qty 0 removes the line). Once a
+ * line has been fired to the kitchen it locks and shows its live `kotStatus`
+ * so the waiter can watch kitchen progress.
  */
 import { memo, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { formatMoney } from "@/lib/money";
-import { colors, radius, space } from "@/theme/theme";
+import { PressableScale } from "@/components/PressableScale";
+import { colors, fonts, radius, space } from "@/theme/theme";
 import type { KotItemStatus, OrderItem } from "@/types/models";
 
 interface OrderLineRowProps {
@@ -31,11 +37,14 @@ const STATUS_LABEL: Record<KotItemStatus, string> = {
 function OrderLineRowImpl({ line, onQty, onNotes }: OrderLineRowProps) {
   const editable = line.kotStatus === "pending" && !line.voided;
   const [notes, setNotes] = useState(line.notes ?? "");
+  const [notesOpen, setNotesOpen] = useState(false);
 
   // Keep local field in sync when the underlying line changes remotely.
   useEffect(() => {
     setNotes(line.notes ?? "");
   }, [line.notes]);
+
+  const savedNote = (line.notes ?? "").trim();
 
   return (
     <View style={styles.row}>
@@ -44,34 +53,48 @@ function OrderLineRowImpl({ line, onQty, onNotes }: OrderLineRowProps) {
           <Text style={styles.name} numberOfLines={2}>
             {line.name}
           </Text>
-          <Text style={styles.price}>
-            {formatMoney(line.price)} × {line.qty}
-          </Text>
+          <View style={styles.subRow}>
+            <Text style={styles.price}>{formatMoney(line.price)} each</Text>
+            {editable && !notesOpen ? (
+              <Pressable
+                hitSlop={8}
+                onPress={() => setNotesOpen(true)}
+                style={styles.noteToggle}
+              >
+                {savedNote ? (
+                  <Text style={styles.noteInline} numberOfLines={2}>
+                    · “{savedNote}”
+                  </Text>
+                ) : (
+                  <Text style={styles.noteLink}>· ✎ Add note</Text>
+                )}
+              </Pressable>
+            ) : null}
+            {!editable && savedNote ? (
+              <Text style={styles.noteInline} numberOfLines={2}>
+                · “{savedNote}”
+              </Text>
+            ) : null}
+          </View>
         </View>
 
         {editable ? (
           <View style={styles.stepper}>
-            <Pressable
+            <PressableScale
               hitSlop={8}
-              style={({ pressed }) => [
-                styles.stepBtn,
-                pressed && styles.btnPressed,
-              ]}
+              style={styles.stepBtn}
               onPress={() => onQty(line.qty - 1)}
             >
               <Text style={styles.stepGlyph}>−</Text>
-            </Pressable>
+            </PressableScale>
             <Text style={styles.stepQty}>{line.qty}</Text>
-            <Pressable
+            <PressableScale
               hitSlop={8}
-              style={({ pressed }) => [
-                styles.stepBtn,
-                pressed && styles.btnPressed,
-              ]}
+              style={styles.stepBtn}
               onPress={() => onQty(line.qty + 1)}
             >
               <Text style={styles.stepGlyph}>+</Text>
-            </Pressable>
+            </PressableScale>
           </View>
         ) : (
           <View style={styles.statusBadge}>
@@ -80,20 +103,20 @@ function OrderLineRowImpl({ line, onQty, onNotes }: OrderLineRowProps) {
             </Text>
           </View>
         )}
-      </View>
 
-      <View style={styles.lineTotalRow}>
         <Text style={styles.lineTotal}>
           {formatMoney(line.price * line.qty)}
         </Text>
       </View>
 
-      {editable ? (
+      {editable && notesOpen ? (
         <TextInput
           style={styles.notesInput}
           value={notes}
           onChangeText={setNotes}
+          autoFocus
           onEndEditing={() => {
+            setNotesOpen(false);
             const trimmed = notes.trim();
             if (trimmed !== (line.notes ?? "")) onNotes(trimmed);
           }}
@@ -101,8 +124,6 @@ function OrderLineRowImpl({ line, onQty, onNotes }: OrderLineRowProps) {
           placeholderTextColor={colors.textMuted}
           multiline
         />
-      ) : line.notes ? (
-        <Text style={styles.notesReadonly}>“{line.notes}”</Text>
       ) : null}
     </View>
   );
@@ -119,21 +140,41 @@ const styles = StyleSheet.create({
   },
   headerRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
+    alignItems: "center",
     gap: space.s3,
   },
   nameCol: {
     flex: 1,
-    gap: 2,
+    gap: 3,
   },
   name: {
+    fontFamily: fonts.bold,
     fontSize: 15,
-    fontWeight: "700",
     color: colors.text,
   },
+  subRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    columnGap: space.s1,
+  },
   price: {
+    fontFamily: fonts.regular,
     fontSize: 13,
+    color: colors.textMuted,
+  },
+  noteToggle: {
+    flexShrink: 1,
+  },
+  noteLink: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    color: colors.primary,
+  },
+  noteInline: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    fontStyle: "italic",
     color: colors.textMuted,
   },
   stepper: {
@@ -142,30 +183,24 @@ const styles = StyleSheet.create({
     gap: space.s2,
   },
   stepBtn: {
-    width: 30,
-    height: 30,
+    width: 32,
+    height: 32,
     borderRadius: radius.pill,
-    backgroundColor: colors.primarySoft,
-    borderWidth: 1,
-    borderColor: colors.primary,
+    backgroundColor: colors.surfaceMuted,
     alignItems: "center",
     justifyContent: "center",
   },
   stepGlyph: {
-    color: colors.primaryDark,
+    color: colors.text,
     fontSize: 18,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     lineHeight: 20,
-  },
-  btnPressed: {
-    opacity: 0.55,
-    transform: [{ scale: 0.9 }],
   },
   stepQty: {
     minWidth: 20,
     textAlign: "center",
     fontSize: 15,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.text,
   },
   statusBadge: {
@@ -175,32 +210,27 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primarySoft,
   },
   statusText: {
+    fontFamily: fonts.bold,
     fontSize: 12,
-    fontWeight: "700",
     color: colors.primaryDark,
   },
-  lineTotalRow: {
-    alignItems: "flex-end",
-  },
   lineTotal: {
+    fontFamily: fonts.bold,
     fontSize: 14,
-    fontWeight: "700",
     color: colors.text,
+    minWidth: 68,
+    textAlign: "right",
   },
   notesInput: {
     borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.primary,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
     paddingHorizontal: space.s3,
-    paddingVertical: space.s2,
+    paddingVertical: space.s3,
+    fontFamily: fonts.regular,
     fontSize: 13,
     color: colors.text,
-    minHeight: 38,
-  },
-  notesReadonly: {
-    fontSize: 13,
-    fontStyle: "italic",
-    color: colors.textMuted,
+    minHeight: 42,
   },
 });

@@ -1,14 +1,26 @@
-import { View, Text, Pressable, StyleSheet } from "react-native";
+import { View, Text, Pressable, StyleSheet, Switch, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { router } from "expo-router";
 import { useAuth } from "@/features/auth/AuthContext";
+import { useSettings } from "@/features/settings/SettingsContext";
 import { colors, space, radius, shadow } from "@/theme/theme";
 
-/** Signed-in user's profile + sign out. */
+/** Signed-in user's profile, billing settings + sign out. */
 export default function AccountRoute() {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, role } = useAuth();
+  const { gstEnabled, setGstEnabled } = useSettings();
+
+  // Waiters/kitchen never generate bills — the tax switch is a billing control.
+  const canToggleGst = role === "cashier" || role === "admin";
+  // Admins reach Menu Management from its own tab; cashiers get an entry here.
+  const showMenuManagement = role === "cashier";
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
       <Text style={styles.title}>Account</Text>
       <View style={styles.card}>
         <Text style={styles.avatar}>👤</Text>
@@ -18,12 +30,70 @@ export default function AccountRoute() {
           <Text style={styles.roleText}>{profile?.role.toUpperCase()}</Text>
         </View>
       </View>
+
+      {canToggleGst && (
+        <View style={styles.settingsCard}>
+          <Text style={styles.settingsTitle}>Billing</Text>
+          <View style={styles.settingRow}>
+            <View style={styles.settingText}>
+              <Text style={styles.settingLabel}>Charge GST (5%)</Text>
+              <Text style={styles.settingHint}>
+                {gstEnabled
+                  ? "New bills add CGST + SGST to the total"
+                  : "New bills are generated without GST"}
+              </Text>
+            </View>
+            <Switch
+              value={gstEnabled}
+              onValueChange={setGstEnabled}
+              trackColor={{ false: colors.borderStrong, true: colors.primary }}
+              thumbColor={colors.surface}
+            />
+          </View>
+
+          <View style={styles.settingsDivider} />
+
+          <Pressable
+            style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}
+            onPress={() => router.push("/bill-history")}
+          >
+            <View style={styles.settingText}>
+              <Text style={styles.settingLabel}>Bill History</Text>
+              <Text style={styles.settingHint}>
+                View settled bills and reprint a customer's copy
+              </Text>
+            </View>
+            <Text style={styles.settingChevron}>›</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {showMenuManagement && (
+        <View style={styles.settingsCard}>
+          <Text style={styles.settingsTitle}>Menu</Text>
+          <Pressable
+            style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}
+            onPress={() => router.push("/menu")}
+          >
+            <View style={styles.settingText}>
+              <Text style={styles.settingLabel}>Menu Management</Text>
+              <Text style={styles.settingHint}>
+                Add, edit or remove items (up to 1,000) and mark dishes
+                unavailable for the day
+              </Text>
+            </View>
+            <Text style={styles.settingChevron}>›</Text>
+          </Pressable>
+        </View>
+      )}
+
       <Pressable
         style={({ pressed }) => [styles.signOutBtn, pressed && styles.pressed]}
         onPress={() => signOut()}
       >
         <Text style={styles.signOutText}>Sign Out</Text>
       </Pressable>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -32,8 +102,11 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  scrollContent: {
     padding: space.s6,
     gap: space.s5,
+    paddingBottom: space.s6 * 2,
   },
   title: { fontSize: 28, fontWeight: "800", color: colors.text },
   card: {
@@ -55,6 +128,31 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.s3,
   },
   roleText: { color: colors.primary, fontWeight: "700", fontSize: 12 },
+  settingsCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: space.s5,
+    gap: space.s3,
+    ...shadow.card,
+  },
+  settingsTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  settingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: space.s3,
+  },
+  settingText: { flex: 1 },
+  settingLabel: { fontSize: 16, fontWeight: "600", color: colors.text },
+  settingHint: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  settingChevron: { fontSize: 24, color: colors.textMuted, fontWeight: "600" },
+  settingsDivider: { height: 1, backgroundColor: colors.border },
   signOutBtn: {
     backgroundColor: colors.surface,
     borderWidth: 1,

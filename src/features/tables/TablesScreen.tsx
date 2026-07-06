@@ -6,7 +6,7 @@
  * by status. All writes go through the ported `tablesApi` — this screen never
  * touches Firestore directly.
  */
-import { memo, useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -24,12 +24,12 @@ import { router } from "expo-router";
 import { paths } from "@/lib/firestore/paths";
 import { useCollectionData } from "@/lib/firestore/useRealtime";
 import { formatMoney } from "@/lib/money";
-import { shortElapsedLabel } from "@/lib/date";
-import { ElapsedTime } from "@/components/ElapsedTime";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { tapFeedback } from "@/lib/feedback";
+import { colors, fonts, radius, space } from "@/theme/theme";
 import type { Kot, Order, OrderItem, Table, TableStatus } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
 import { KotAlertBanner, useKotStatusAlerts } from "@/features/order/kotAlerts";
+import { TableCard } from "./TableCard";
 import {
   closeTable,
   mergeTables,
@@ -173,7 +173,10 @@ export function TablesScreen() {
           return (
             <Pressable
               key={f.key}
-              onPress={() => setFilter(f.key)}
+              onPress={() => {
+                tapFeedback();
+                setFilter(f.key);
+              }}
               style={({ pressed }) => [
                 styles.filterChip,
                 active && styles.filterChipActive,
@@ -308,84 +311,6 @@ export function TablesScreen() {
 
       {/* Live kitchen status toast */}
       <KotAlertBanner alert={kotAlert} topOffset={insets.top + space.s2} />
-    </View>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Table card
-// ─────────────────────────────────────────────────────────────────────────────
-
-const TableCard = memo(function TableCard({
-  table,
-  order,
-  primary,
-  onPress,
-}: {
-  table: Table & { id: string };
-  order: (Order & { id: string }) | null;
-  primary: (Table & { id: string }) | null;
-  onPress: (t: Table & { id: string }) => void;
-}) {
-  const status = table.status;
-  const cardStyle = [
-    styles.card,
-    status === "available" && styles.cardAvailable,
-    status === "occupied" && styles.cardOccupied,
-    status === "billed" && styles.cardBilled,
-  ];
-  const nameStyle = [
-    styles.cardName,
-    status === "available" && styles.cardNameAvailable,
-    status === "billed" && styles.cardNameMuted,
-  ];
-
-  return (
-    <Pressable
-      style={({ pressed }) => [...cardStyle, pressed && styles.cardPressed]}
-      onPress={() => onPress(table)}
-    >
-      <View style={styles.cardTopRow}>
-        <Text style={nameStyle}>{tableName(table)}</Text>
-        <StatusPill status={status} />
-      </View>
-
-      <Text style={styles.cardSeats}>{table.capacity} seats</Text>
-
-      {primary && (
-        <View style={styles.mergeBadge}>
-          <Text style={styles.mergeBadgeText}>
-            Merged → {tableName(primary)}
-          </Text>
-        </View>
-      )}
-
-      {order && !table.mergedInto && (
-        <View style={styles.cardMeta}>
-          <Text style={styles.cardTotal}>{formatMoney(order.subtotal)}</Text>
-          {order.createdAt && (
-            <ElapsedTime
-              createdAt={order.createdAt}
-              format={shortElapsedLabel}
-              intervalMs={30000}
-              style={styles.cardElapsed}
-            />
-          )}
-        </View>
-      )}
-    </Pressable>
-  );
-});
-
-function StatusPill({ status }: { status: TableStatus }) {
-  const map = {
-    available: { bg: colors.primarySoft, fg: colors.primary, label: "Free" },
-    occupied: { bg: colors.amberSoft, fg: colors.amberText, label: "Occupied" },
-    billed: { bg: colors.surfaceMuted, fg: colors.textMuted, label: "Billed" },
-  }[status];
-  return (
-    <View style={[styles.pill, { backgroundColor: map.bg }]}>
-      <Text style={[styles.pillText, { color: map.fg }]}>{map.label}</Text>
     </View>
   );
 }
@@ -693,14 +618,24 @@ function SplitSheet({
 // ─────────────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+  screen: { flex: 1, backgroundColor: colors.floor },
   header: {
     paddingHorizontal: space.s4,
     paddingTop: space.s4,
     paddingBottom: space.s2,
   },
-  title: { fontSize: 24, fontWeight: "700", color: colors.text },
-  subtitle: { fontSize: 14, color: colors.textMuted, marginTop: space.s1 },
+  title: {
+    fontFamily: fonts.extrabold,
+    fontSize: 34,
+    color: colors.text,
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontFamily: fonts.regular,
+    fontSize: 15,
+    color: colors.textMuted,
+    marginTop: space.s1,
+  },
 
   filterRow: {
     flexDirection: "row",
@@ -721,74 +656,24 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
-  filterText: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
+  filterText: {
+    fontFamily: fonts.semibold,
+    fontSize: 13,
+    color: colors.textMuted,
+  },
   filterTextActive: { color: colors.textInverse },
 
   grid: { paddingHorizontal: space.s4 },
   column: { gap: space.s3, marginBottom: space.s3 },
   empty: {
     textAlign: "center",
+    fontFamily: fonts.regular,
     color: colors.textMuted,
     padding: space.s5,
     fontSize: 14,
   },
 
-  card: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    padding: space.s4,
-    minHeight: 104,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadow.card,
-  },
-  cardAvailable: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primarySoft,
-  },
-  cardOccupied: { borderColor: colors.accentAmber, borderWidth: 1.5 },
-  cardBilled: {
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.borderStrong,
-  },
-  cardPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
   pressed: { opacity: 0.7 },
-  cardTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  cardName: { fontSize: 18, fontWeight: "700", color: colors.text },
-  cardNameAvailable: { color: colors.primaryDark },
-  cardNameMuted: { color: colors.textMuted },
-  cardSeats: { fontSize: 12, color: colors.textMuted, marginTop: space.s1 },
-
-  cardMeta: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-    marginTop: space.s3,
-  },
-  cardTotal: { fontSize: 16, fontWeight: "700", color: colors.text },
-  cardElapsed: { fontSize: 12, color: colors.amberText, fontWeight: "600" },
-
-  mergeBadge: {
-    marginTop: space.s2,
-    alignSelf: "flex-start",
-    backgroundColor: colors.surfaceMuted,
-    paddingHorizontal: space.s2,
-    paddingVertical: 2,
-    borderRadius: radius.sm,
-  },
-  mergeBadgeText: { fontSize: 11, color: colors.textMuted, fontWeight: "600" },
-
-  pill: {
-    paddingHorizontal: space.s2,
-    paddingVertical: 2,
-    borderRadius: radius.pill,
-  },
-  pillText: { fontSize: 11, fontWeight: "700" },
 
   // Modal / sheets
   backdrop: {
@@ -805,12 +690,13 @@ const styles = StyleSheet.create({
     maxHeight: "80%",
   },
   sheetTitle: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
+    fontSize: 19,
     color: colors.text,
     marginBottom: space.s3,
   },
   sheetHint: {
+    fontFamily: fonts.regular,
     fontSize: 13,
     color: colors.textMuted,
     marginBottom: space.s2,
@@ -828,7 +714,7 @@ const styles = StyleSheet.create({
   actionPrimary: { backgroundColor: colors.primary },
   actionDanger: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.danger },
   actionDisabled: { opacity: 0.45 },
-  actionText: { fontSize: 15, fontWeight: "600", color: colors.text },
+  actionText: { fontFamily: fonts.semibold, fontSize: 15, color: colors.text },
   actionTextPrimary: { color: colors.textInverse },
   actionTextDanger: { color: colors.danger },
 
@@ -848,8 +734,8 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: colors.primarySoft,
   },
-  pickLabel: { fontSize: 15, fontWeight: "600", color: colors.text },
-  pickMeta: { fontSize: 13, color: colors.textMuted },
+  pickLabel: { fontFamily: fonts.semibold, fontSize: 15, color: colors.text },
+  pickMeta: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted },
 
   targetRow: { flexDirection: "row", marginBottom: space.s2 },
   targetChip: {
@@ -864,6 +750,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderColor: colors.primary,
   },
-  targetChipText: { fontSize: 13, fontWeight: "600", color: colors.textMuted },
+  targetChipText: {
+    fontFamily: fonts.semibold,
+    fontSize: 13,
+    color: colors.textMuted,
+  },
   targetChipTextActive: { color: colors.textInverse },
 });

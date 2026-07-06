@@ -68,14 +68,21 @@ export type BillTotals = Pick<
  *   subtotal        = Σ price*qty for non-voided lines
  *   discountAmount  = subtotal * discount%
  *   taxable         = subtotal - discountAmount
- *   cgst            = taxable * 2.5%
- *   sgst            = taxable * 2.5%
+ *   cgst            = taxable * 2.5%   (0 when GST is switched off)
+ *   sgst            = taxable * 2.5%   (0 when GST is switched off)
  *   grandTotal      = taxable + cgst + sgst
+ *
+ * `gstEnabled: false` (the cashier's Account-screen switch) zeroes both GST
+ * components; the rules' gstTotal == cgst + sgst check still holds at 0.
  *
  * This function is also the reference the Firestore rules validate against,
  * so it must stay deterministic and integer-only.
  */
-export function computeBill(lines: BillLine[], discountPercent = 0): BillTotals {
+export function computeBill(
+  lines: BillLine[],
+  discountPercent = 0,
+  gstEnabled = true
+): BillTotals {
   const pct = Math.min(Math.max(discountPercent, 0), 100);
 
   const subtotal = lines
@@ -85,8 +92,8 @@ export function computeBill(lines: BillLine[], discountPercent = 0): BillTotals 
   const discountAmount = roundPaise((subtotal * pct) / 100);
   const taxable = subtotal - discountAmount;
 
-  const cgst = roundPaise(taxable * TAX_CONFIG.cgstRate);
-  const sgst = roundPaise(taxable * TAX_CONFIG.sgstRate);
+  const cgst = gstEnabled ? roundPaise(taxable * TAX_CONFIG.cgstRate) : 0;
+  const sgst = gstEnabled ? roundPaise(taxable * TAX_CONFIG.sgstRate) : 0;
   const gstTotal = cgst + sgst;
   const grandTotal = taxable + gstTotal;
 

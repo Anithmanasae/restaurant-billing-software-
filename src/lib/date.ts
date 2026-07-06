@@ -51,6 +51,17 @@ export function shortElapsedLabel(ms: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
+/** Live ticket timer: "45s" / "12m 30s" / "1h 20m". Ticks every second. */
+export function timerLabel(ms: number): string {
+  const totalS = Math.floor(ms / 1000);
+  if (totalS < 60) return `${totalS}s`;
+  const mins = Math.floor(totalS / 60);
+  if (mins < 60) return `${mins}m ${totalS % 60}s`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
 /** Clock time like "10:04 AM" in IST (manual offset — see note above). */
 export function formatTimeIST(d: Date): string {
   const ist = new Date(d.getTime() + IST_OFFSET_MS);

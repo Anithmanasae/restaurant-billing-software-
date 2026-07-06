@@ -11,8 +11,11 @@ export const colors = {
   danger: "#e5484d", // voids, negative deltas
 
   bg: "#f4f5f7", // app canvas
+  floor: "#f8f9fa", // Tables floor canvas + image placeholders (soft grid backdrop)
   surface: "#ffffff", // cards
   surfaceMuted: "#f0f1f3", // image placeholder, chips
+  searchBg: "#f1f3f5", // pill search field (very light gray, borderless)
+  inputBorder: "#e2e8f0", // subtle input hairline (premium notes field)
 
   text: "#1a1a1a",
   textMuted: "#6b7280",
@@ -24,14 +27,22 @@ export const colors = {
   amberSoft: "#fdecc8",
   amberText: "#92600a",
 
+  // Status pills on the floor grid (soft tint + darker legible text).
+  mintSoft: "#e3f6ec", // Free
+  mintText: "#0f7a4f",
+  indigoSoft: "#e6e8fb", // Billed
+  indigoText: "#3538cd",
+
   // KDS status system: red = active first-round order, orange = table has an
   // additional round, green = completed.
-  statusRed: "#d92d20",
+  statusRed: "#D32F2F",
   statusRedSoft: "#fdeceb",
-  statusOrange: "#f79009",
+  statusOrange: "#FF9800",
   statusOrangeSoft: "#fdf1dc",
-  statusGreen: "#17a05e",
+  statusGreen: "#2E7D32",
   statusGreenSoft: "#e4f5ec",
+  statusBlue: "#1565C0", // takeaway/counter orders
+  statusBlueSoft: "#e7f0fb",
 } as const;
 
 /** 4px spacing scale. */
@@ -48,6 +59,8 @@ export const radius = {
   sm: 8,
   md: 12,
   lg: 16,
+  xl: 20,
+  xxl: 24,
   pill: 999,
 } as const;
 
@@ -59,6 +72,34 @@ export const shadow = {
     shadowRadius: 3,
     elevation: 2,
   },
+  // Soft, highly-blurred depth for floating white cards on the floor grid.
+  float: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 20,
+    elevation: 3,
+  },
+  // Colored "glow" for the floating primary CTA (green at ~20% opacity).
+  glow: {
+    shadowColor: "#0f7a5a",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+} as const;
+
+/**
+ * Plus Jakarta Sans — geometric sans-serif for a premium, rounded feel.
+ * Loaded once in the root layout; reference these family names in styles.
+ */
+export const fonts = {
+  regular: "PlusJakartaSans_400Regular",
+  medium: "PlusJakartaSans_500Medium",
+  semibold: "PlusJakartaSans_600SemiBold",
+  bold: "PlusJakartaSans_700Bold",
+  extrabold: "PlusJakartaSans_800ExtraBold",
 } as const;
 
 /** Locale / currency. */

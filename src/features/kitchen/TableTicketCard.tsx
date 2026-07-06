@@ -1,36 +1,57 @@
 /**
  * KDS card — ONE per table, folding every active ticket for that table.
  *
- * Status color system (left border + dot): RED = active first-round order,
- * ORANGE = the table has an additional round (with a "+N" items badge),
- * GREEN = completed. Sized by the parent so a 3×3 grid fits the screen.
+ * High-density tile for the 3×3 board. The status color system rides on a
+ * slim 20px solid block down the left edge (RED = active first-round order,
+ * ORANGE = the table has an additional round, GREEN = completed) holding the
+ * card's queue position in white. White body with a 1px hairline border — no
+ * shadows. Header pairs the table name with the exact fire time, the live
+ * "Xm ago" elapsed label sits on its own line, and items render as a bullet
+ * list that wraps freely — never truncates.
  *
- * All three actions are always visible; each applies to every ticket in the
- * group it can sensibly move (Start → `new` tickets, Ready → `new`/`preparing`,
- * Completed → everything active). Writes go only through the ported `kdsApi`
- * (kitchen may change nothing but status/printedCount — firestore.rules).
+ * One full-width COMPLETE action (chef-hat icon) tinted with the status
+ * color; completed tickets show a static DONE state instead of a button that
+ * silently no-ops. It completes every active ticket in the group. Writes go
+ * only through the ported `kdsApi` (kitchen may change nothing but
+ * status/printedCount — firestore.rules).
  */
 import { memo, useCallback } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { colors, fonts, radius, space } from "@/theme/theme";
 import { formatTimeIST } from "@/lib/date";
 import { animateNextLayout, tapFeedback } from "@/lib/feedback";
 import { ElapsedTime } from "@/components/ElapsedTime";
-import { completeGroup, readyGroup, startGroup } from "./groupActions";
-import {
-  additionalItemCount,
-  hasAdditionalRound,
-  type TableGroup,
-} from "./groupKots";
+import { completeGroup } from "./groupActions";
+import { hasAdditionalRound, type TableGroup } from "./groupKots";
 
 const MAX_ITEM_LINES = 3;
 
+/**
+ * Long labels ("Takeaway", "Patio 2") wrap letter-by-letter in the narrow
+ * 3-col cards, so compress them to a short code: "Patio 2" → "P2",
+ * "Takeaway" → "TA", while "T4" stays as-is. The detail sheet still shows
+ * the full name.
+ */
+function compactLabel(label: string): string {
+  const trimmed = label.trim();
+  if (trimmed.length <= 4) return trimmed;
+  const words = trimmed.split(/\s+/);
+  // Single long word ("Takeaway") → first two letters.
+  if (words.length === 1) return trimmed.slice(0, 2).toUpperCase();
+  // Multi-word → initials, keeping any numbers ("Patio 2" → "P2").
+  return words.map((w) => (/^\d/.test(w) ? w : w[0].toUpperCase())).join("");
+}
+
 export const TableTicketCard = memo(function TableTicketCard({
   group,
+  queue,
   onPress,
 }: {
   group: TableGroup;
-  /** Tapping the card (outside the buttons) opens the detail sheet. */
+  /** 1-based position in the visible FIFO queue — shown in the edge block. */
+  queue: number;
+  /** Tapping the card (outside the button) opens the detail sheet. */
   onPress: () => void;
 }) {
   const additional = hasAdditionalRound(group);
@@ -41,142 +62,82 @@ export const TableTicketCard = memo(function TableTicketCard({
       : colors.statusRed;
 
   const first = group.tickets[0];
-  const extraCount = additionalItemCount(group);
 
-  // Flatten items across rounds; later rounds keep an orange marker.
-  const lines = group.tickets.flatMap((t, round) =>
+  // Flatten items across rounds (later rounds are folded into the same list).
+  const lines = group.tickets.flatMap((t) =>
     t.items
       .filter((it) => !it.voided)
       .map((it) => ({
         key: `${t.id}:${it.lineId}`,
         qty: it.qty,
         name: it.name,
-        additional: round > 0 && !group.completed,
       }))
   );
   const shown = lines.slice(0, MAX_ITEM_LINES);
   const hidden = lines.length - shown.length;
 
-  const anyNew = group.tickets.some((t) => t.status === "new");
-  const anyPreparing = group.tickets.some((t) => t.status === "preparing");
-
-  const run = useCallback((write: Promise<unknown>) => {
+  const onComplete = useCallback(() => {
     tapFeedback();
-    animateNextLayout(); // the card may leave/enter a tab on status change
-    write.catch((e) =>
+    animateNextLayout(); // the card leaves this tab on status change
+    completeGroup(group).catch((e) =>
       Alert.alert(
         "Couldn’t update ticket",
         e instanceof Error ? e.message : String(e)
       )
     );
-  }, []);
-
-  const onStart = useCallback(() => run(startGroup(group)), [group, run]);
-  const onReady = useCallback(() => run(readyGroup(group)), [group, run]);
-  const onComplete = useCallback(() => run(completeGroup(group)), [group, run]);
+  }, [group]);
 
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.card,
-        { borderLeftColor: accent },
-        pressed && styles.cardPressed,
-      ]}
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
     >
-      {/* Table label + status dot · time received */}
-      <View style={styles.headerRow}>
-        <View style={styles.headerLeft}>
-          <View style={[styles.dot, { backgroundColor: accent }]} />
+      {/* Queue block — thick status-colored left edge */}
+      <View style={[styles.queueBlock, { backgroundColor: accent }]}>
+        <Text style={styles.queueText}>{queue}</Text>
+      </View>
+
+      <View style={styles.body}>
+        {/* Table name · exact time, elapsed on its own line below */}
+        <View style={styles.headerRow}>
           <Text style={styles.tableLabel} numberOfLines={1}>
-            {group.tableLabel}
+            {compactLabel(group.tableLabel)}
+          </Text>
+          <Text style={styles.time}>
+            {first.createdAt ? formatTimeIST(first.createdAt.toDate()) : "—"}
           </Text>
         </View>
-        <Text style={styles.time}>
-          {first.createdAt ? formatTimeIST(first.createdAt.toDate()) : "—"}
-        </Text>
-      </View>
-
-      {/* +N additional badge · elapsed */}
-      <View style={styles.metaRow}>
-        {additional ? (
-          <View style={styles.plusBadge}>
-            <Text style={styles.plusBadgeText}>+{extraCount}</Text>
-          </View>
-        ) : (
-          <View />
-        )}
         <ElapsedTime
           createdAt={first.createdAt}
+          intervalMs={30000}
           style={[styles.ago, { color: accent }]}
         />
-      </View>
 
-      {/* Items */}
-      <View style={styles.items}>
-        {shown.map((l) => (
-          <View key={l.key} style={styles.itemRow}>
-            <View
-              style={[
-                styles.itemDot,
-                {
-                  backgroundColor: l.additional
-                    ? colors.statusOrange
-                    : group.completed
-                      ? colors.statusGreen
-                      : colors.statusRed,
-                },
-              ]}
-            />
-            <Text style={styles.itemText} numberOfLines={1}>
-              {l.qty} × {l.name}
+        {/* Items — wrap freely, never truncate */}
+        <View style={styles.items}>
+          {shown.map((l) => (
+            <Text key={l.key} style={styles.itemText}>
+              • {l.qty} x {l.name}
             </Text>
-          </View>
-        ))}
-        {hidden > 0 && <Text style={styles.moreText}>+{hidden} more…</Text>}
-      </View>
-
-      {/* Actions — always visible; the next sensible step is highlighted */}
-      <View style={styles.actions}>
-        <View style={styles.smallRow}>
-          <Pressable
-            onPress={onStart}
-            style={({ pressed }) => [
-              styles.smallBtn,
-              anyNew && styles.startActive,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text
-              style={[styles.smallBtnText, anyNew && styles.smallBtnTextActive]}
-            >
-              Start
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={onReady}
-            style={({ pressed }) => [
-              styles.smallBtn,
-              anyPreparing && styles.readyActive,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text
-              style={[
-                styles.smallBtnText,
-                anyPreparing && styles.smallBtnTextActive,
-              ]}
-            >
-              Ready
-            </Text>
-          </Pressable>
+          ))}
+          {hidden > 0 && <Text style={styles.moreText}>+{hidden} more…</Text>}
         </View>
+
+        {/* Single full-width action, tinted with the status color */}
         {group.completed ? (
-          // Already completed — nothing left to write, so show a done state
-          // instead of a button that silently no-ops. Start/Ready above
-          // reopen the ticket back onto the live board.
-          <View style={[styles.completeBtn, styles.doneState]}>
-            <Text style={styles.doneText}>✓ Completed</Text>
+          <View style={[styles.completeBtn, { backgroundColor: accent }]}>
+            <MaterialCommunityIcons
+              name="chef-hat"
+              size={12}
+              color={colors.textInverse}
+            />
+            <Text
+              style={styles.completeText}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              DONE
+            </Text>
           </View>
         ) : (
           <Pressable
@@ -187,7 +148,18 @@ export const TableTicketCard = memo(function TableTicketCard({
               pressed && styles.pressed,
             ]}
           >
-            <Text style={styles.completeText}>Completed</Text>
+            <MaterialCommunityIcons
+              name="chef-hat"
+              size={12}
+              color={colors.textInverse}
+            />
+            <Text
+              style={styles.completeText}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              COMPLETE
+            </Text>
           </Pressable>
         )}
       </View>
@@ -198,148 +170,89 @@ export const TableTicketCard = memo(function TableTicketCard({
 const styles = StyleSheet.create({
   card: {
     flex: 1,
+    flexDirection: "row",
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    borderLeftWidth: 4,
-    padding: space.s2,
-    justifyContent: "space-between",
     overflow: "hidden",
-    ...shadow.card,
-  },
-  pressed: {
-    opacity: 0.7,
   },
   cardPressed: {
-    opacity: 0.85,
+    opacity: 0.9,
+  },
+  pressed: {
+    opacity: 0.8,
+  },
+  queueBlock: {
+    width: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  queueText: {
+    fontFamily: fonts.extrabold,
+    fontSize: 12,
+    color: colors.textInverse,
+  },
+  body: {
+    flex: 1,
+    paddingHorizontal: space.s2,
+    paddingVertical: space.s2,
   },
   headerRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     gap: space.s1,
-  },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.s1,
-    flexShrink: 1,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: radius.pill,
   },
   tableLabel: {
-    fontSize: 16,
-    fontWeight: "800",
+    flex: 1,
+    fontFamily: fonts.extrabold,
+    fontSize: 15,
+    lineHeight: 18,
     color: colors.text,
-    flexShrink: 1,
   },
   time: {
-    fontSize: 10,
+    fontFamily: fonts.semibold,
+    fontSize: 9,
+    lineHeight: 18,
     color: colors.textMuted,
-    fontWeight: "600",
-  },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    minHeight: 16,
-  },
-  plusBadge: {
-    backgroundColor: colors.statusOrangeSoft,
-    paddingHorizontal: space.s2,
-    borderRadius: radius.pill,
-  },
-  plusBadgeText: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: colors.statusOrange,
   },
   ago: {
+    fontFamily: fonts.bold,
     fontSize: 10,
-    fontWeight: "700",
+    marginTop: 1,
   },
   items: {
     flex: 1,
     marginVertical: space.s1,
-    gap: 2,
+    gap: space.s1, // 4px breathing room between (possibly wrapped) items
     overflow: "hidden",
   },
-  itemRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.s1,
-  },
-  itemDot: {
-    width: 5,
-    height: 5,
-    borderRadius: radius.pill,
-  },
   itemText: {
-    flex: 1,
+    fontFamily: fonts.semibold,
     fontSize: 11,
+    lineHeight: 15,
     color: colors.text,
-    fontWeight: "600",
   },
   moreText: {
+    fontFamily: fonts.medium,
     fontSize: 10,
     color: colors.textMuted,
   },
-  actions: {
-    gap: space.s1,
-  },
-  smallRow: {
-    flexDirection: "row",
-    gap: space.s1,
-  },
-  smallBtn: {
-    flex: 1,
-    paddingVertical: space.s1,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
-    alignItems: "center",
-  },
-  startActive: {
-    backgroundColor: colors.accentAmber,
-    borderColor: colors.accentAmber,
-  },
-  readyActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  smallBtnText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: colors.textMuted,
-  },
-  smallBtnTextActive: {
-    color: colors.textInverse,
-  },
   completeBtn: {
-    paddingVertical: space.s1 + 2,
-    borderRadius: radius.sm,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: space.s1,
+    height: 38,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.s1,
   },
   completeText: {
+    flexShrink: 1,
+    fontFamily: fonts.extrabold,
     fontSize: 11,
-    fontWeight: "800",
+    letterSpacing: 0.2,
     color: colors.textInverse,
-    letterSpacing: 0.3,
-  },
-  doneState: {
-    backgroundColor: colors.statusGreenSoft,
-    borderWidth: 1,
-    borderColor: colors.statusGreen,
-  },
-  doneText: {
-    fontSize: 11,
-    fontWeight: "800",
-    color: colors.statusGreen,
-    letterSpacing: 0.3,
   },
 });

@@ -1,16 +1,23 @@
 import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { StyleSheet } from "react-native";
+import { BlurView } from "expo-blur";
 import { useAuth } from "@/features/auth/AuthContext";
 import { ROLE_ACCESS } from "@/features/auth/roleRoutes";
 import { Loading } from "@/components/Loading";
-import { colors } from "@/theme/theme";
+import { colors, fonts } from "@/theme/theme";
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
+// Outline glyph when inactive, filled (brand-tinted) when active.
 const icon =
   (name: IconName) =>
-  ({ color, size }: { color: string; size: number }) => (
-    <Ionicons name={name} size={size} color={color} />
+  ({ color, size, focused }: { color: string; size: number; focused: boolean }) => (
+    <Ionicons
+      name={focused ? name : (`${name}-outline` as IconName)}
+      size={size}
+      color={color}
+    />
   );
 
 /**
@@ -36,8 +43,21 @@ export default function AppLayout() {
         freezeOnBlur: true,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: { backgroundColor: colors.surface },
-        tabBarLabelStyle: { fontSize: 10, fontWeight: "600" },
+        // Frosted glass: drop the hard top hairline and let a blur panel sit
+        // behind the (transparent) bar.
+        tabBarStyle: {
+          backgroundColor: "transparent",
+          borderTopWidth: 0,
+          elevation: 0,
+        },
+        tabBarBackground: () => (
+          <BlurView
+            tint="light"
+            intensity={40}
+            style={[StyleSheet.absoluteFill, styles.tabBlur]}
+          />
+        ),
+        tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 10 },
       }}
     >
       <Tabs.Screen
@@ -97,6 +117,13 @@ export default function AppLayout() {
       />
       {/* Table-order detail: reached from Tables/Order screens, not a tab. */}
       <Tabs.Screen name="order/[tableId]" options={{ href: null }} />
+      {/* Settled-bill history: reached from Account, not a tab. */}
+      <Tabs.Screen name="bill-history" options={{ href: null }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  // Translucent wash over the blur so labels/icons stay legible.
+  tabBlur: { backgroundColor: "rgba(255,255,255,0.72)" },
+});

@@ -5,9 +5,10 @@
  *
  * Price is entered in rupees (₹) and stored as paise via rupeesToPaise.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -68,9 +69,24 @@ export function MenuItemForm({
   const [error, setError] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
+  // If a retry happens after the item doc was already created, reuse that id
+  // instead of creating a duplicate.
+  const createdIdRef = useRef<string | null>(null);
+
+  // The primary button unlocks only once the required fields are filled:
+  // a name, a category, and a price greater than zero.
+  const priceNum = Number(priceRupees);
+  const canSave =
+    name.trim().length > 0 &&
+    categoryId !== "" &&
+    priceRupees.trim() !== "" &&
+    Number.isFinite(priceNum) &&
+    priceNum > 0;
+
   // Reset the form whenever it opens for a different item.
   useEffect(() => {
     if (!visible) return;
+    createdIdRef.current = null;
     setName(item?.name ?? "");
     setCategoryId(item?.categoryId ?? defaultCategoryId ?? "");
     setPriceRupees(item ? paiseToRupeeString(item.price) : "");
@@ -102,26 +118,13 @@ export function MenuItemForm({
   };
 
   const handleSave = async () => {
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setError("Name is required.");
-      return;
-    }
-    if (!categoryId) {
-      setError("Please choose a category.");
-      return;
-    }
-    const priceNum = Number(priceRupees);
-    if (!Number.isFinite(priceNum) || priceNum < 0) {
-      setError("Enter a valid price.");
-      return;
-    }
+    if (!canSave) return;
 
     setSaving(true);
     setError(null);
     try {
       const base: MenuItemInput = {
-        name: trimmedName,
+        name: name.trim(),
         categoryId,
         price: rupeesToPaise(priceNum),
         enabled,
@@ -132,14 +135,29 @@ export function MenuItemForm({
 
       // Create the item first (to obtain an id) so the image can be uploaded
       // under that id, then persist the download URL onto the item.
-      const itemId = item ? item.id : await createMenuItem(base);
+      const itemId =
+        item?.id ?? createdIdRef.current ?? (await createMenuItem(base));
+      createdIdRef.current = itemId;
       if (item) {
         await updateMenuItem(itemId, base);
       }
 
+      // Photo upload is best-effort: the item is already saved, so a Storage
+      // failure (e.g. Storage not enabled on the Firebase project) must not
+      // block the menu edit — save without the photo and tell the user.
       if (localImageUri) {
-        const blob = await (await fetch(localImageUri)).blob();
-        await uploadMenuItemImage(itemId, blob);
+        try {
+          const blob = await (await fetch(localImageUri)).blob();
+          await uploadMenuItemImage(itemId, blob);
+        } catch (e) {
+          const detail = e instanceof Error ? e.message : String(e);
+          Alert.alert(
+            "Item saved without photo",
+            detail.includes("storage/")
+              ? "Photo uploads aren't available — Firebase Storage isn't set up on this project yet. The item was saved without its photo."
+              : `The item was saved, but the photo upload failed: ${detail}`
+          );
+        }
       }
 
       onClose();
@@ -307,17 +325,21 @@ export function MenuItemForm({
               style={({ pressed }) => [
                 styles.btn,
                 styles.btnPrimary,
-                saving && styles.btnDisabled,
+                (saving || !canSave) && styles.btnDisabled,
                 pressed && styles.pressed,
               ]}
               onPress={handleSave}
-              disabled={saving}
+              disabled={saving || !canSave}
             >
               {saving ? (
                 <ActivityIndicator color={colors.textInverse} />
               ) : (
                 <Text style={styles.btnPrimaryText}>
-                  {item ? "Save Changes" : "Add Item"}
+                  {canSave
+                    ? item
+                      ? "Save Changes"
+                      : "Add Item"
+                    : "Enter name, category & price"}
                 </Text>
               )}
             </Pressable>

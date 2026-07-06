@@ -35,10 +35,12 @@ function linesOf(order: Order): BillLine[] {
 }
 
 /**
- * "Food first, pay after" backstop: refuse to bill unless every line was sent
- * to the kitchen and every KOT ticket for the order is `completed`. The
- * cashier UI already hides such orders; this guard catches anything that
- * slips past it (stale snapshot, other call sites).
+ * Billing guard. Dine-in is "food first, pay after": refuse to bill unless
+ * every line was sent to the kitchen and every KOT ticket for the order is
+ * `completed`. Takeaway/delivery is pay-first at the counter, so the ticket
+ * only has to EXIST (kitchen has the order) — it may still be preparing.
+ * The cashier UI already hides unbillable orders; this guard catches anything
+ * that slips past it (stale snapshot, other call sites).
  */
 async function assertKitchenDone(order: Order): Promise<void> {
   const unsent = order.items.some(
@@ -57,6 +59,7 @@ async function assertKitchenDone(order: Order): Promise<void> {
       "Nothing has been sent to the kitchen for this order yet."
     );
   }
+  if (order.orderType !== "dine-in") return; // pay-first: bill while preparing
   const unfinished = kotsSnap.docs.some((d) => d.data().status !== "completed");
   if (unfinished) {
     throw new Error(
@@ -75,13 +78,14 @@ async function assertKitchenDone(order: Order): Promise<void> {
 export async function generateBill(
   order: Order,
   cashierUid: string,
-  tableLabel: string
+  tableLabel: string,
+  gstEnabled = true
 ): Promise<string> {
   if (order.billId) return order.billId;
 
   await assertKitchenDone(order);
 
-  const totals = computeBill(linesOf(order), 0);
+  const totals = computeBill(linesOf(order), 0, gstEnabled);
   const billsCol = paths.bills();
 
   const billRef = await addDoc(billsCol, {

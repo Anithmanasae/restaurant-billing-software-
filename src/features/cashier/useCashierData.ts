@@ -2,7 +2,7 @@
  * Live subscriptions for the cashier screen.
  */
 import { useMemo } from "react";
-import { query, where } from "firebase/firestore";
+import { limit, orderBy, query, Timestamp, where } from "firebase/firestore";
 import { paths } from "@/lib/firestore/paths";
 import { useCollectionData, useDocData } from "@/lib/firestore/useRealtime";
 import type { Bill, Kot, Order, Table } from "@/types/models";
@@ -17,18 +17,45 @@ export function useActiveBills() {
   return useCollectionData<Bill>(q);
 }
 
+/** How far back the settled-bill history looks. */
+const HISTORY_WINDOW_DAYS = 30;
+
+/**
+ * Settled bills for the history screen, newest first. Only paid bills carry a
+ * `paidAt` timestamp, so a range on that single field selects exactly them
+ * without needing a composite index (unlike status == 'paid' + orderBy).
+ * Capped to the last 30 days / 200 docs so the subscription stays bounded.
+ */
+export function usePaidBills() {
+  const q = useMemo(() => {
+    const since = Timestamp.fromMillis(
+      Date.now() - HISTORY_WINDOW_DAYS * 24 * 60 * 60 * 1000
+    );
+    return query(
+      paths.bills(),
+      where("paidAt", ">", since),
+      orderBy("paidAt", "desc"),
+      limit(200)
+    );
+  }, []);
+  return useCollectionData<Bill>(q);
+}
+
 /** KOT statuses that mean the kitchen is still working on a ticket. */
 export const ACTIVE_KOT_STATUSES = ["new", "preparing", "ready"] as const;
 
 /**
- * "Food first, pay after": true only when the kitchen is done with an order.
+ * Is this order ready to bill?
  *   - at least one line was actually sent to the kitchen (has a kotId), AND
  *   - no line is still waiting to be sent (`pending` — billing it would charge
  *     for food the kitchen never saw), AND
- *   - none of the order's tickets are still new/preparing/ready.
+ *   - dine-in only ("food first, pay after"): none of the order's tickets are
+ *     still new/preparing/ready. Takeaway/delivery is pay-first at the
+ *     counter, so it's billable as soon as its ticket is fired.
  *
  * Derived entirely from the live order lines + live kot docs — the kitchen
  * never writes to orders (rules only let it change kot status/printedCount).
+ * Mirrors `assertKitchenDone` in cashierApi (the write-path backstop).
  */
 export function isKitchenDone(
   order: Order,
@@ -37,7 +64,9 @@ export function isKitchenDone(
   const lines = order.items.filter((i) => !i.voided && i.qty > 0);
   const hasSent = lines.some((i) => i.kotId !== null);
   const hasUnsent = lines.some((i) => i.kotStatus === "pending");
-  return hasSent && !hasUnsent && !orderIdsWithActiveKots.has(order.id);
+  if (!hasSent || hasUnsent) return false;
+  if (order.orderType !== "dine-in") return true;
+  return !orderIdsWithActiveKots.has(order.id);
 }
 
 /**

@@ -149,7 +149,10 @@ export function BillDetail({
 
           <Row label="Subtotal" value={formatMoney(bill.subtotal)} />
 
-          <Row label="GST (5%)" value={formatMoney(bill.gstTotal)} />
+          {/* Bills created with the GST switch off carry zero tax — omit the row. */}
+          {bill.gstTotal > 0 && (
+            <Row label="GST (5%)" value={formatMoney(bill.gstTotal)} />
+          )}
 
           <View style={styles.divider} />
 
