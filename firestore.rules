@@ -11,6 +11,9 @@ rules_version = '2';
 //   - paid bills are immutable
 //   - quantities/prices/totals must be non-negative and internally consistent
 //   - kitchen can only advance KOT status, nothing else
+//   - self-signup only creates PENDING waiter/kitchen profiles; the cashier
+//     approves them. Exactly one cashier can ever self-claim via meta/bootstrap.
+//   - pending/denied/restricted accounts can read nothing but their own profile
 // ─────────────────────────────────────────────────────────────────────────────
 
 service cloud.firestore {
@@ -29,16 +32,31 @@ service cloud.firestore {
         return get(/databases/$(database)/documents/restaurants/$(restaurantId)/users/$(request.auth.uid)).data;
       }
 
+      // A usable account = cashier-approved signup that isn't restricted today.
+      function activeProfile() {
+        return profile().status == 'approved' && profile().active == true;
+      }
+
       function hasRole(role) {
-        return signedIn() && profile().active == true && profile().role == role;
+        return signedIn() && activeProfile() && profile().role == role;
       }
 
       function hasAnyRole(roles) {
-        return signedIn() && profile().active == true && profile().role in roles;
+        return signedIn() && activeProfile() && profile().role in roles;
+      }
+
+      // Baseline for all app-data reads. Pending/denied/restricted logins can
+      // resolve their own profile doc but see no restaurant data.
+      function isActiveStaff() {
+        return signedIn() && activeProfile();
       }
 
       function isAdmin() {
         return hasRole('admin');
+      }
+
+      function bootstrapPath() {
+        return /databases/$(database)/documents/restaurants/$(restaurantId)/meta/bootstrap;
       }
 
       function incomingDiffers(fields) {
@@ -47,12 +65,69 @@ service cloud.firestore {
       }
 
       // ---- users ---------------------------------------------------------
-      // Anyone signed in can read their own profile (needed to resolve role).
-      // Accounts are provisioned by the admin/seed script only — there is no
-      // self-signup.
+      // Anyone signed in can read their own profile (needed to resolve role
+      // and to watch for approval). Admin + cashier read the whole staff list.
+      //
+      // Self-signup:
+      //  - waiter/kitchen create their OWN profile as pending+inactive; the
+      //    cashier must approve before the account can do anything.
+      //  - the very first cashier ("2nd owner") self-claims by atomically
+      //    creating an approved cashier profile AND flipping meta/bootstrap
+      //    cashierClaimed false→true in one batch. Once claimed, this branch
+      //    can never pass again.
+      //
+      // Management: the cashier approves/denies/restricts/deletes waiter and
+      // kitchen profiles only — never admin or cashier profiles, and can never
+      // promote anyone out of waiter/kitchen.
       match /users/{uid} {
-        allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
-        allow create, update, delete: if isAdmin();
+        allow read: if signedIn()
+          && (request.auth.uid == uid || hasAnyRole(['admin', 'cashier']));
+
+        allow create: if isAdmin()
+          // waiter/kitchen self-signup — always lands pending + inactive
+          || (signedIn() && request.auth.uid == uid
+              && request.resource.data.role in ['waiter', 'kitchen']
+              && request.resource.data.status == 'pending'
+              && request.resource.data.active == false)
+          // one-time cashier claim — must set the claim flag in the same batch
+          || (signedIn() && request.auth.uid == uid
+              && request.resource.data.role == 'cashier'
+              && request.resource.data.status == 'approved'
+              && request.resource.data.active == true
+              && !(exists(bootstrapPath())
+                   && get(bootstrapPath()).data.cashierClaimed == true)
+              && getAfter(bootstrapPath()).data.cashierClaimed == true);
+
+        allow update: if isAdmin()
+          || (hasRole('cashier')
+              && resource.data.role in ['waiter', 'kitchen']
+              && request.resource.data.role in ['waiter', 'kitchen']
+              && request.resource.data.status in ['pending', 'approved', 'denied']
+              && request.resource.data.active is bool);
+
+        allow delete: if isAdmin()
+          || (hasRole('cashier') && resource.data.role in ['waiter', 'kitchen']);
+      }
+
+      // ---- meta/bootstrap (one-time cashier claim flag) -------------------
+      // Publicly readable: the signup screen must know, BEFORE any account
+      // exists, whether to offer the "I'm the cashier" option. It holds a
+      // single boolean and nothing sensitive. Writes may only flip it to true
+      // in the same batch that creates the claimant's own cashier profile
+      // (verified via getAfter), so the flag can't be set — or reset — on its
+      // own by a non-admin.
+      match /meta/bootstrap {
+        allow read: if true;
+        allow create: if signedIn()
+          && request.resource.data.keys().hasOnly(['cashierClaimed'])
+          && request.resource.data.cashierClaimed == true
+          && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/users/$(request.auth.uid)).data.role == 'cashier';
+        allow update: if signedIn()
+          && resource.data.cashierClaimed == false
+          && request.resource.data.keys().hasOnly(['cashierClaimed'])
+          && request.resource.data.cashierClaimed == true
+          && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/users/$(request.auth.uid)).data.role == 'cashier';
+        allow delete: if isAdmin();
       }
 
       // ---- menu ----------------------------------------------------------
@@ -61,12 +136,12 @@ service cloud.firestore {
       // Delete is split out because request.resource does not exist on
       // delete requests, so the price check would wrongly deny them.
       match /menuCategories/{categoryId} {
-        allow read: if signedIn();
+        allow read: if isActiveStaff();
         allow create, update: if hasAnyRole(['admin', 'cashier']);
         allow delete: if hasAnyRole(['admin', 'cashier']);
       }
       match /menuItems/{itemId} {
-        allow read: if signedIn();
+        allow read: if isActiveStaff();
         allow create, update: if hasAnyRole(['admin', 'cashier'])
           && request.resource.data.price is int
           && request.resource.data.price >= 0;
@@ -76,7 +151,7 @@ service cloud.firestore {
       // ---- tables --------------------------------------------------------
       // Floor staff read tables and update occupancy/merge/shift status.
       match /tables/{tableId} {
-        allow read: if signedIn();
+        allow read: if isActiveStaff();
         allow create, delete: if isAdmin();
         allow update: if hasAnyRole(['admin', 'waiter', 'cashier']);
       }
@@ -85,7 +160,7 @@ service cloud.firestore {
       // Waiters and cashiers create/edit orders (cashiers take takeaway at
       // the counter); admins too. Subtotal must be a non-negative int.
       match /orders/{orderId} {
-        allow read: if signedIn();
+        allow read: if isActiveStaff();
         allow create: if hasAnyRole(['admin', 'waiter', 'cashier'])
           && request.resource.data.subtotal is int
           && request.resource.data.subtotal >= 0;
@@ -99,7 +174,7 @@ service cloud.firestore {
       // Floor staff (waiter/cashier) create tickets. Kitchen can ONLY advance
       // status/printedCount, never edit items or prices.
       match /kots/{kotId} {
-        allow read: if signedIn();
+        allow read: if isActiveStaff();
         allow create: if hasAnyRole(['admin', 'waiter', 'cashier']);
         allow update: if isAdmin()
           || (hasRole('kitchen')
@@ -116,7 +191,7 @@ service cloud.firestore {
       // bills are immutable. Totals must be internally consistent and
       // non-negative.
       match /bills/{billId} {
-        allow read: if signedIn();
+        allow read: if isActiveStaff();
 
         // A waiter may only REQUEST a bill. Cashier/admin may also open it
         // straight to 'finalized'. New bills are never created already paid.
@@ -157,7 +232,7 @@ service cloud.firestore {
       // Sequential human-facing numbers, incremented in a transaction by
       // floor/cashier staff. Value must be a non-negative int.
       match /counters/{name} {
-        allow read: if signedIn();
+        allow read: if isActiveStaff();
         allow write: if hasAnyRole(['admin', 'waiter', 'cashier'])
           && request.resource.data.value is int
           && request.resource.data.value >= 0;

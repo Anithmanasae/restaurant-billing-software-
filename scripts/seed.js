@@ -105,6 +105,7 @@ async function seedStaff(db) {
         name: staff.name,
         email: staff.email,
         role: staff.role,
+        status: "approved",
         active: true,
         ...(existing.exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
       },
@@ -113,6 +114,13 @@ async function seedStaff(db) {
 
     created.push({ ...staff, uid: userRecord.uid, password: STAFF_PASSWORD });
   }
+
+  // Seeding provisions a cashier, so the one-time cashier self-signup claim
+  // must read as taken — otherwise the signup screen would offer a second
+  // cashier seat.
+  await db
+    .doc(`restaurants/${RESTAURANT_ID}/meta/bootstrap`)
+    .set({ cashierClaimed: true });
 
   return created;
 }

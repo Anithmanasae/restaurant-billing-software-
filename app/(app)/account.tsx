@@ -14,6 +14,8 @@ export default function AccountRoute() {
   const canToggleGst = role === "cashier" || role === "admin";
   // Admins reach Menu Management from its own tab; cashiers get an entry here.
   const showMenuManagement = role === "cashier";
+  // The cashier is the "2nd owner": approves signups, restricts/removes staff.
+  const showStaff = role === "cashier" || role === "admin";
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
@@ -80,6 +82,25 @@ export default function AccountRoute() {
               <Text style={styles.settingHint}>
                 Add, edit or remove items (up to 1,000) and mark dishes
                 unavailable for the day
+              </Text>
+            </View>
+            <Text style={styles.settingChevron}>›</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {showStaff && (
+        <View style={styles.settingsCard}>
+          <Text style={styles.settingsTitle}>Staff</Text>
+          <Pressable
+            style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}
+            onPress={() => router.push("/staff")}
+          >
+            <View style={styles.settingText}>
+              <Text style={styles.settingLabel}>Staff Management</Text>
+              <Text style={styles.settingHint}>
+                Approve new waiter/kitchen accounts, restrict staff for the
+                day, or remove them
               </Text>
             </View>
             <Text style={styles.settingChevron}>›</Text>

@@ -9,34 +9,14 @@ import {
   ScrollView,
   Platform,
 } from "react-native";
-import { Redirect } from "expo-router";
+import { Redirect, router } from "expo-router";
 import { useAuth } from "@/features/auth/AuthContext";
+import { friendlyAuthError } from "@/features/auth/authErrors";
 import { homePathForRole } from "@/features/auth/roleRoutes";
 import { colors, space, radius } from "@/theme/theme";
 
-/** Map Firebase auth error codes to messages a restaurant staffer can act on. */
-function friendlyAuthError(e: unknown): string {
-  const code = (e as { code?: string })?.code ?? "";
-  switch (code) {
-    case "auth/invalid-credential":
-    case "auth/wrong-password":
-    case "auth/user-not-found":
-      return "Invalid email or password.";
-    case "auth/invalid-email":
-      return "That email address doesn't look right.";
-    case "auth/too-many-requests":
-      return "Too many attempts — wait a minute and try again.";
-    case "auth/network-request-failed":
-      return "No connection. Check your internet and try again.";
-    case "auth/user-disabled":
-      return "This account has been disabled. Contact your admin.";
-    default:
-      return "Something went wrong. Please try again.";
-  }
-}
-
 export default function Login() {
-  const { signIn, profile } = useAuth();
+  const { signIn, profile, gate } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +24,8 @@ export default function Login() {
 
   // Already signed in → go to role home.
   if (profile) return <Redirect href={homePathForRole(profile.role)} />;
+  // Signed in but pending/denied/restricted → status screen.
+  if (gate) return <Redirect href="/pending" />;
 
   async function onSubmit() {
     if (!email.trim() || !password) {
@@ -110,6 +92,17 @@ export default function Login() {
               {busy ? "Signing in…" : "Sign In"}
             </Text>
           </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.signupLink, pressed && { opacity: 0.6 }]}
+            onPress={() => router.push("/signup")}
+            disabled={busy}
+          >
+            <Text style={styles.signupText}>
+              New staff member?{" "}
+              <Text style={styles.signupTextBold}>Create an account</Text>
+            </Text>
+          </Pressable>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -150,4 +143,7 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.6 },
   buttonPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
   buttonText: { color: colors.textInverse, fontSize: 16, fontWeight: "700" },
+  signupLink: { alignItems: "center", padding: space.s3 },
+  signupText: { color: colors.textMuted, fontSize: 14 },
+  signupTextBold: { color: colors.primary, fontWeight: "700" },
 });

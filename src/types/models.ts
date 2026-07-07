@@ -27,14 +27,31 @@ export type Ts = Timestamp | null;
 
 export type Role = "admin" | "waiter" | "cashier" | "kitchen";
 
+/**
+ * Signup approval lifecycle. `status` is the one-time gate (did the cashier
+ * accept this signup?); `active` is the day-to-day switch (restricted for the
+ * day / fired). Only `approved` + `active` profiles can use the app.
+ */
+export type UserStatus = "pending" | "approved" | "denied";
+
 export interface AppUser {
   uid: string;
   name: string;
   email: string;
   role: Role;
+  status: UserStatus;
   active: boolean;
   photoUrl?: string;
   createdAt: Ts;
+}
+
+/**
+ * restaurants/{id}/meta/bootstrap — single doc guarding the one-time cashier
+ * ("2nd owner") self-signup. Once claimed, the cashier option disappears from
+ * the signup screen and the rules reject any further cashier self-creation.
+ */
+export interface BootstrapMeta {
+  cashierClaimed: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

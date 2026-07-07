@@ -26,8 +26,11 @@ const icon =
  * modules outside the role are hidden via `href: null`.
  */
 export default function AppLayout() {
-  const { profile, loading } = useAuth();
+  const { profile, gate, loading } = useAuth();
   if (loading) return <Loading />;
+  // Restricted/removed mid-shift → the live profile listener lands here and
+  // kicks the device out to the gate screen instantly.
+  if (gate) return <Redirect href="/pending" />;
   if (!profile) return <Redirect href="/login" />;
 
   const can = (module: keyof typeof ROLE_ACCESS) =>
@@ -119,6 +122,8 @@ export default function AppLayout() {
       <Tabs.Screen name="order/[tableId]" options={{ href: null }} />
       {/* Settled-bill history: reached from Account, not a tab. */}
       <Tabs.Screen name="bill-history" options={{ href: null }} />
+      {/* Staff approvals/restrictions: reached from Account, not a tab. */}
+      <Tabs.Screen name="staff" options={{ href: null }} />
     </Tabs>
   );
 }

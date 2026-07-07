@@ -15,6 +15,7 @@ import { db, RESTAURANT_ID } from "@/lib/firebase";
 import type {
   AppUser,
   Bill,
+  BootstrapMeta,
   DailySummary,
   Kot,
   MenuCategory,
@@ -36,6 +37,9 @@ function ref<T>(name: string, id: string): DocumentReference<T> {
 export const paths = {
   users: () => col<AppUser>("users"),
   user: (id: string) => ref<AppUser>("users", id),
+
+  /** One-time cashier signup claim flag (see BootstrapMeta). */
+  bootstrap: () => ref<BootstrapMeta>("meta", "bootstrap"),
 
   tables: () => col<Table>("tables"),
   table: (id: string) => ref<Table>("tables", id),

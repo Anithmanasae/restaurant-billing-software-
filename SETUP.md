@@ -44,8 +44,12 @@ firebase deploy --only firestore:rules,firestore:indexes,storage
 
 ## 3. Seed sample data + logins
 
-Accounts can only be created by an admin (via the seed script or the Firebase
-Console) — there is no in-app registration.
+Staff accounts are normally created in-app: the first person to sign up claims
+the one-time **Cashier (owner)** seat, and waiters/kitchen staff sign up and
+wait for the cashier's approval (Account → Staff Management). The seed script
+is an optional dev shortcut that pre-provisions one login per role (and marks
+the cashier seat claimed). `node scripts/resetUsers.js` wipes all accounts and
+reopens the cashier claim.
 
 Creates one user per role, sample menu categories/items, and 8 tables.
 
