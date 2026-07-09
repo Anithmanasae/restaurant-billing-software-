@@ -7,14 +7,13 @@
  * only cashier/admin can settle.
  */
 import {
-  addDoc,
+  doc,
   getDocs,
   query,
   runTransaction,
   serverTimestamp,
   updateDoc,
   where,
-  writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { paths } from "@/lib/firestore/paths";
@@ -68,10 +67,18 @@ async function assertKitchenDone(order: Order): Promise<void> {
   }
 }
 
+/** counters/billNumber starts here, so the first printed bill is 000101. */
+const BILL_NUMBER_SEED = 100;
+
 /**
  * Create a finalized bill for an open order (cashier-initiated), or return the
  * existing bill id if the order already has one. Marks the order `billed` and
  * the table `billed` so the floor view reflects it live.
+ *
+ * Runs as a single transaction that also mints the sequential human-facing
+ * bill number from `counters/billNumber` (same pattern as sendKot's ticket
+ * counter). The order is re-read inside the transaction so a concurrent
+ * generate can't create two bills — or burn two numbers — for one order.
  *
  * Only runs for kitchen-done orders — see `assertKitchenDone`.
  */
@@ -85,37 +92,53 @@ export async function generateBill(
 
   await assertKitchenDone(order);
 
-  const totals = computeBill(linesOf(order), 0, gstEnabled);
-  const billsCol = paths.bills();
+  const billRef = doc(paths.bills());
+  const counterRef = paths.counter("billNumber");
 
-  const billRef = await addDoc(billsCol, {
-    orderId: order.id,
-    tableId: order.tableId,
-    tableLabel,
-    ...totals,
-    status: "finalized",
-    paymentMode: null,
-    requestedBy: order.waiterId,
-    cashierId: cashierUid,
-    printedCount: 0,
-    createdAt: serverTimestamp(),
-    paidAt: null,
-  } as unknown as Bill);
+  return runTransaction(db, async (tx) => {
+    // ---- reads first (transaction requirement) ----
+    const orderSnap = await tx.get(paths.order(order.id));
+    if (!orderSnap.exists()) throw new Error(`Order ${order.id} not found`);
+    const fresh = orderSnap.data();
+    if (fresh.billId) return fresh.billId;
 
-  const batch = writeBatch(db);
-  batch.update(paths.order(order.id), {
-    billId: billRef.id,
-    status: "billed",
-    updatedAt: serverTimestamp(),
-  });
-  if (order.tableId) {
-    batch.update(paths.table(order.tableId), {
+    const counterSnap = await tx.get(counterRef);
+    const current = counterSnap.exists()
+      ? counterSnap.data().value
+      : BILL_NUMBER_SEED;
+    const billNumber = current + 1;
+
+    const totals = computeBill(linesOf(fresh), 0, gstEnabled);
+
+    // ---- writes ----
+    tx.set(counterRef, { value: billNumber });
+    tx.set(billRef, {
+      billNumber,
+      orderId: order.id,
+      tableId: fresh.tableId,
+      tableLabel,
+      ...totals,
+      status: "finalized",
+      paymentMode: null,
+      requestedBy: fresh.waiterId,
+      cashierId: cashierUid,
+      printedCount: 0,
+      createdAt: serverTimestamp(),
+      paidAt: null,
+    } as unknown as Bill);
+    tx.update(paths.order(order.id), {
+      billId: billRef.id,
       status: "billed",
       updatedAt: serverTimestamp(),
     });
-  }
-  await batch.commit();
-  return billRef.id;
+    if (fresh.tableId) {
+      tx.update(paths.table(fresh.tableId), {
+        status: "billed",
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return billRef.id;
+  });
 }
 
 /**

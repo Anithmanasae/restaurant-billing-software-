@@ -3,6 +3,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useSettings } from "@/features/settings/SettingsContext";
+import { ReceiptDetailsCard } from "@/features/settings/ReceiptDetailsCard";
+import { PrinterSettingsCard } from "@/features/settings/PrinterSettingsCard";
 import { colors, space, radius, shadow } from "@/theme/theme";
 
 /** Signed-in user's profile, billing settings + sign out. */
@@ -16,6 +18,8 @@ export default function AccountRoute() {
   const showMenuManagement = role === "cashier";
   // The cashier is the "2nd owner": approves signups, restricts/removes staff.
   const showStaff = role === "cashier" || role === "admin";
+  // Receipt header + thermal printer are billing concerns: admin + cashier.
+  const showReceiptSetup = role === "cashier" || role === "admin";
 
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
@@ -68,6 +72,13 @@ export default function AccountRoute() {
             <Text style={styles.settingChevron}>›</Text>
           </Pressable>
         </View>
+      )}
+
+      {showReceiptSetup && (
+        <>
+          <ReceiptDetailsCard />
+          <PrinterSettingsCard />
+        </>
       )}
 
       {showMenuManagement && (

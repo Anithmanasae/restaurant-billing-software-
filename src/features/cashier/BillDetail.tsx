@@ -25,6 +25,15 @@ import { formatMoney } from "@/lib/money";
 import { tapFeedback } from "@/lib/feedback";
 import { colors, radius, shadow, space } from "@/theme/theme";
 import type { PaymentMode } from "@/types/models";
+import { useAuth } from "@/features/auth/AuthContext";
+import { useRestaurantProfile } from "@/features/settings/useRestaurantProfile";
+import { encodeReceipt, formatBillNumber } from "@/lib/printer/escpos";
+import {
+  PRINTING_UNAVAILABLE_MESSAGE,
+  getPaperWidth,
+  isPrintingAvailable,
+  printToSavedPrinter,
+} from "@/lib/printer/printerService";
 import { reprintBill, settleBill } from "./cashierApi";
 import { useBill, useOrder } from "./useCashierData";
 
@@ -47,12 +56,15 @@ export function BillDetail({
 }) {
   const { data: bill, loading: billLoading } = useBill(billId);
   const { data: order } = useOrder(bill?.orderId ?? null);
+  const { data: restaurant } = useRestaurantProfile();
+  const { profile: cashierProfile } = useAuth();
 
   const isPaid = bill?.status === "paid";
 
   // Local UI selections (bill.paymentMode is null until settled).
   const [selectedMode, setSelectedMode] = useState<PaymentMode | null>(null);
   const [busy, setBusy] = useState<null | "settle" | "print">(null);
+  const [justPrinted, setJustPrinted] = useState(false);
 
   // Reflect the settled mode once a bill is paid.
   useEffect(() => {
@@ -85,9 +97,50 @@ export function BillDetail({
     });
   }
 
-  function onReprint() {
-    if (!bill) return;
-    void run("print", () => reprintBill(bill.id, bill.printedCount));
+  /**
+   * Real thermal print: encode the live bill + order + restaurant profile to
+   * ESC/POS and send it to the saved Bluetooth printer. Only after the bytes
+   * are accepted does `reprintBill` bump the printed counter. In Expo Go the
+   * native Bluetooth module doesn't exist, so we explain instead of crashing.
+   */
+  function onPrint() {
+    if (!bill || !order || busy) return;
+    if (!isPrintingAvailable()) {
+      Alert.alert("Printing unavailable", PRINTING_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    tapFeedback();
+    setBusy("print");
+    setJustPrinted(false);
+    void (async () => {
+      try {
+        const paperWidth = await getPaperWidth();
+        const receipt = encodeReceipt({
+          profile: restaurant ?? { name: "SADA POS" },
+          bill,
+          order,
+          cashierName: cashierProfile?.name ?? "-",
+          paperWidth,
+          // Before settling, print the mode the cashier has picked (if any).
+          paymentLabel: bill.paymentMode
+            ? paymentLabel(bill.paymentMode)
+            : selectedMode
+              ? paymentLabel(selectedMode)
+              : null,
+        });
+        await printToSavedPrinter(receipt.bytes);
+        await reprintBill(bill.id, bill.printedCount);
+        setJustPrinted(true);
+      } catch (e) {
+        Alert.alert(
+          "Couldn't print",
+          (e instanceof Error ? e.message : String(e)) +
+            "\n\nCheck Account > Printer Settings."
+        );
+      } finally {
+        setBusy(null);
+      }
+    })();
   }
 
   if (billLoading || !bill) {
@@ -106,6 +159,9 @@ export function BillDetail({
         <View style={styles.topBarText}>
           <Text style={styles.topBarTitle}>{bill.tableLabel}</Text>
           <Text style={styles.topBarSub}>
+            {bill.billNumber !== undefined
+              ? `Bill No ${formatBillNumber(bill.billNumber)} · `
+              : ""}
             {isPaid ? `Paid via ${paymentLabel(bill.paymentMode!)}` : "Open bill"}
           </Text>
         </View>
@@ -197,7 +253,7 @@ export function BillDetail({
           <View style={styles.tileRow}>
             <Pressable
               style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
-              onPress={onReprint}
+              onPress={onPrint}
               disabled={busy !== null}
             >
               <Text style={styles.tileIcon}>🖨</Text>
@@ -205,7 +261,9 @@ export function BillDetail({
               <Text style={styles.tileMeta}>
                 {busy === "print"
                   ? "Printing…"
-                  : `Printed ${bill.printedCount}×`}
+                  : justPrinted
+                    ? "Printed ✓"
+                    : `Printed ${bill.printedCount}×`}
               </Text>
             </Pressable>
             <View style={[styles.tile, styles.tileDisabled]}>

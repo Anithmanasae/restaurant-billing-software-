@@ -64,6 +64,16 @@ service cloud.firestore {
           .hasOnly(fields);
       }
 
+      // ---- restaurant profile (this ROOT doc) ------------------------------
+      // Holds the receipt header: { name, addressLine?, updatedAt }. Any
+      // signed-in user may resolve it (it prints on every bill); only the
+      // admin/cashier edit it, and the name must be a non-empty string ≤ 60.
+      allow get: if signedIn();
+      allow write: if hasAnyRole(['admin', 'cashier'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 60;
+
       // ---- users ---------------------------------------------------------
       // Anyone signed in can read their own profile (needed to resolve role
       // and to watch for approval). Admin + cashier read the whole staff list.

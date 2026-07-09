@@ -21,6 +21,7 @@ import type {
   MenuCategory,
   MenuItem,
   Order,
+  RestaurantProfile,
   Table,
 } from "@/types/models";
 
@@ -35,6 +36,10 @@ function ref<T>(name: string, id: string): DocumentReference<T> {
 }
 
 export const paths = {
+  /** The restaurant ROOT doc — holds the receipt-header profile (name/address). */
+  restaurantProfile: () =>
+    doc(db, root) as DocumentReference<RestaurantProfile>,
+
   users: () => col<AppUser>("users"),
   user: (id: string) => ref<AppUser>("users", id),
 

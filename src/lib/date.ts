@@ -62,6 +62,14 @@ export function timerLabel(ms: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
+/** Calendar date like "02-07-2026" (dd-mm-yyyy) in IST — receipt format. */
+export function formatDateIST(d: Date): string {
+  const ist = new Date(d.getTime() + IST_OFFSET_MS);
+  const day = String(ist.getUTCDate()).padStart(2, "0");
+  const m = String(ist.getUTCMonth() + 1).padStart(2, "0");
+  return `${day}-${m}-${ist.getUTCFullYear()}`;
+}
+
 /** Clock time like "10:04 AM" in IST (manual offset — see note above). */
 export function formatTimeIST(d: Date): string {
   const ist = new Date(d.getTime() + IST_OFFSET_MS);

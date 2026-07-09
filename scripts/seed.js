@@ -77,6 +77,21 @@ function rupeesToPaise(rupees) {
   return Math.round(rupees * 100);
 }
 
+async function seedRestaurantProfile(db) {
+  console.log(`\n--- Restaurant profile (restaurants/${RESTAURANT_ID}) ---`);
+  // The root doc: what prints on the receipt header. Editable later from the
+  // Account tab (admin/cashier), so only merge in defaults.
+  await db.doc(`restaurants/${RESTAURANT_ID}`).set(
+    {
+      name: "SADA Restaurant",
+      addressLine: "Bengaluru, Karnataka",
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+  console.log("  receipt header seeded (name + address)");
+}
+
 async function seedStaff(db) {
   console.log(`\n--- Staff logins (restaurants/${RESTAURANT_ID}/users) ---`);
   const created = [];
@@ -201,6 +216,7 @@ async function main() {
 
   console.log(`Seeding project "${serviceAccount.project_id}", tenant "${RESTAURANT_ID}"...`);
 
+  await seedRestaurantProfile(db);
   const staff = await seedStaff(db);
   await seedMenu(db);
   await seedTables(db);

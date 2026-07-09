@@ -27,6 +27,21 @@ export type Ts = Timestamp | null;
 
 export type Role = "admin" | "waiter" | "cashier" | "kitchen";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Restaurant profile (the restaurants/{id} ROOT doc)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What prints on the receipt header. Stored on the restaurant root doc so the
+ * software can be resold: each deployment edits its own name/address from the
+ * Account tab and bills print under that identity.
+ */
+export interface RestaurantProfile {
+  name: string;
+  addressLine?: string;
+  updatedAt: Ts;
+}
+
 /**
  * Signup approval lifecycle. `status` is the one-time gate (did the cashier
  * accept this signup?); `active` is the day-to-day switch (restricted for the
@@ -174,6 +189,10 @@ export type PaymentMode = "cash" | "upi" | "card";
 
 export interface Bill {
   id: string;
+  /** Sequential human-facing number minted from counters/billNumber (printed
+   *  zero-padded, e.g. "000101"). Absent on bills created before the counter
+   *  existed. */
+  billNumber?: number;
   orderId: string;
   tableId: string | null;
   tableLabel: string;
