@@ -217,7 +217,7 @@ export function BillsScreen() {
 function statusMeta(status: Bill["status"]): { label: string; bg: string; fg: string } {
   switch (status) {
     case "requested":
-      return { label: "Requested", bg: colors.amberSoft, fg: colors.amberText };
+      return { label: "Requested", bg: colors.navySoft, fg: colors.navyText };
     case "finalized":
       return { label: "In progress", bg: colors.primarySoft, fg: colors.primary };
     case "paid":
@@ -322,8 +322,8 @@ function PreparingCard({
     <View style={[styles.card, styles.cardDim]}>
       <View style={styles.cardTop}>
         <Text style={styles.cardTitleText}>{label}</Text>
-        <View style={[styles.pill, { backgroundColor: colors.amberSoft }]}>
-          <Text style={[styles.pillText, { color: colors.amberText }]}>
+        <View style={[styles.pill, { backgroundColor: colors.navySoft }]}>
+          <Text style={[styles.pillText, { color: colors.navyText }]}>
             Preparing…
           </Text>
         </View>

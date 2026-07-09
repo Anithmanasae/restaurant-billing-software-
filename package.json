@@ -8,7 +8,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "compress-images": "node scripts/compressMenuImages.js"
   },
   "dependencies": {
     "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
@@ -21,6 +22,7 @@
     "expo-font": "~13.0.4",
     "expo-haptics": "~14.0.1",
     "expo-image": "~2.0.7",
+    "expo-image-manipulator": "~13.0.6",
     "expo-image-picker": "~16.0.6",
     "expo-linking": "~7.0.5",
     "expo-router": "~4.0.20",
@@ -38,6 +40,7 @@
     "@babel/core": "^7.25.2",
     "@types/react": "~18.3.12",
     "firebase-admin": "^13.0.2",
+    "sharp": "^0.35.3",
     "typescript": "~5.3.3"
   },
   "private": true

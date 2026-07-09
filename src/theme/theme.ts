@@ -1,13 +1,13 @@
 /**
  * SADA POS design tokens for React Native — the JS equivalent of the old
- * theme.css. Green primary, white cards on a light-gray canvas, rounded
+ * theme.css. Navy primary, white cards on a light-gray canvas, rounded
  * corners. Screens: import from here, never hardcode colors/spacing.
  */
 export const colors = {
-  primary: "#0f7a5a", // SADA green (buttons, active nav, links)
-  primaryDark: "#0b5c44",
-  primarySoft: "#e5f4ee", // selected card / active nav background
-  accentAmber: "#f5a623", // KDS "Start" / urgent
+  primary: "#0047A1", // SADA navy (buttons, active nav, links)
+  primaryDark: "#00336F",
+  primarySoft: "#e6eefb", // selected card / active nav background
+  accentBlue: "#1565C0", // KDS "Start" / urgent
   danger: "#e5484d", // voids, negative deltas
 
   bg: "#f4f5f7", // app canvas
@@ -24,8 +24,8 @@ export const colors = {
   border: "#e5e7eb",
   borderStrong: "#d1d5db",
 
-  amberSoft: "#fdecc8",
-  amberText: "#92600a",
+  navySoft: "#e2ebfa",
+  navyText: "#0047A1",
 
   // Status pills on the floor grid (soft tint + darker legible text).
   mintSoft: "#e3f6ec", // Free
@@ -33,12 +33,12 @@ export const colors = {
   indigoSoft: "#e6e8fb", // Billed
   indigoText: "#3538cd",
 
-  // KDS status system: red = active first-round order, orange = table has an
+  // KDS status system: red = active first-round order, indigo = table has an
   // additional round, green = completed.
   statusRed: "#D32F2F",
   statusRedSoft: "#fdeceb",
-  statusOrange: "#FF9800",
-  statusOrangeSoft: "#fdf1dc",
+  statusIndigo: "#3538CD",
+  statusIndigoSoft: "#e9eafc",
   statusGreen: "#2E7D32",
   statusGreenSoft: "#e4f5ec",
   statusBlue: "#1565C0", // takeaway/counter orders
@@ -80,9 +80,9 @@ export const shadow = {
     shadowRadius: 20,
     elevation: 3,
   },
-  // Colored "glow" for the floating primary CTA (green at ~20% opacity).
+  // Colored "glow" for the floating primary CTA (navy at ~20% opacity).
   glow: {
-    shadowColor: "#0f7a5a",
+    shadowColor: "#0047A1",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
     shadowRadius: 16,

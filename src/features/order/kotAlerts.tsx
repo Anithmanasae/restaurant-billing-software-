@@ -110,7 +110,7 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   preparing: {
-    backgroundColor: colors.statusOrange,
+    backgroundColor: colors.statusIndigo,
   },
   ready: {
     backgroundColor: colors.statusGreen,

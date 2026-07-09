@@ -19,6 +19,7 @@ import {
   View,
 } from "react-native";
 import { Image } from "expo-image";
+import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { rupeesToPaise } from "@/lib/money";
@@ -46,6 +47,37 @@ interface MenuItemFormProps {
 function paiseToRupeeString(paise: number): string {
   const rupees = paise / 100;
   return Number.isInteger(rupees) ? String(rupees) : rupees.toFixed(2);
+}
+
+/**
+ * Menu card thumbnails render at ~140-200pt, so anything beyond this edge
+ * length is wasted Storage space and download time on restaurant Wi-Fi.
+ */
+const MAX_IMAGE_DIM = 800;
+
+/**
+ * Downscale the picked photo to at most MAX_IMAGE_DIM on its longest edge and
+ * re-encode as JPEG at 70% quality. A typical 3-4 MB camera photo comes out
+ * around 60-120 KB, which keeps Firebase Storage usage small while staying
+ * sharp at menu-card size.
+ */
+async function compressMenuImage(
+  asset: ImagePicker.ImagePickerAsset
+): Promise<string> {
+  const needsResize =
+    asset.width > MAX_IMAGE_DIM || asset.height > MAX_IMAGE_DIM;
+  const actions: ImageManipulator.Action[] = needsResize
+    ? [
+        asset.width >= asset.height
+          ? { resize: { width: MAX_IMAGE_DIM } }
+          : { resize: { height: MAX_IMAGE_DIM } },
+      ]
+    : [];
+  const result = await ImageManipulator.manipulateAsync(asset.uri, actions, {
+    compress: 0.7,
+    format: ImageManipulator.SaveFormat.JPEG,
+  });
+  return result.uri;
 }
 
 export function MenuItemForm({
@@ -107,13 +139,20 @@ export function MenuItemForm({
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      // Keep uploads small so menu grids load fast on restaurant Wi-Fi.
-      quality: 0.6,
+      // Full quality here — compressMenuImage does the single lossy encode,
+      // avoiding double JPEG artifacts.
+      quality: 1,
       allowsEditing: true,
       aspect: [1, 1],
     });
     if (!result.canceled && result.assets.length > 0) {
-      setLocalImageUri(result.assets[0].uri);
+      const asset = result.assets[0];
+      try {
+        setLocalImageUri(await compressMenuImage(asset));
+      } catch {
+        // Compression is an optimization; fall back to the original photo.
+        setLocalImageUri(asset.uri);
+      }
     }
   };
 

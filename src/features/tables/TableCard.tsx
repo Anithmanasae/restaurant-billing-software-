@@ -23,7 +23,7 @@ function tableName(t: Table): string {
 
 const PILL: Record<TableStatus, { bg: string; fg: string; label: string }> = {
   available: { bg: colors.mintSoft, fg: colors.mintText, label: "Free" },
-  occupied: { bg: colors.amberSoft, fg: colors.amberText, label: "Occupied" },
+  occupied: { bg: colors.navySoft, fg: colors.navyText, label: "Occupied" },
   billed: { bg: colors.indigoSoft, fg: colors.indigoText, label: "Billed" },
 };
 
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
   elapsed: {
     fontFamily: fonts.semibold,
     fontSize: 12,
-    color: colors.amberText,
+    color: colors.navyText,
   },
   metaPlaceholder: { color: colors.borderStrong },
 

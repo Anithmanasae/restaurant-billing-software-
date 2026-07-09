@@ -58,7 +58,7 @@ export const TableTicketCard = memo(function TableTicketCard({
   const accent = group.completed
     ? colors.statusGreen
     : additional
-      ? colors.statusOrange
+      ? colors.statusIndigo
       : colors.statusRed;
 
   const first = group.tickets[0];

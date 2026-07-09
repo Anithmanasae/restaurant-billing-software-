@@ -38,8 +38,8 @@ const STATUS_META: Record<
   new: { label: "NEW", color: colors.statusRed, soft: colors.statusRedSoft },
   preparing: {
     label: "PREPARING",
-    color: colors.statusOrange,
-    soft: colors.statusOrangeSoft,
+    color: colors.statusIndigo,
+    soft: colors.statusIndigoSoft,
   },
   ready: { label: "READY", color: colors.primary, soft: colors.primarySoft },
   completed: {
@@ -78,7 +78,7 @@ export function TicketDetailSheet({
   const accent = group.completed
     ? colors.statusGreen
     : additional
-      ? colors.statusOrange
+      ? colors.statusIndigo
       : colors.statusRed;
 
   const first = group.tickets[0];
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   plusBadge: {
-    backgroundColor: colors.statusOrangeSoft,
+    backgroundColor: colors.statusIndigoSoft,
     paddingHorizontal: space.s2,
     paddingVertical: 2,
     borderRadius: radius.pill,
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
   plusBadgeText: {
     fontSize: 11,
     fontWeight: "800",
-    color: colors.statusOrange,
+    color: colors.statusIndigo,
   },
   closeBtn: {
     padding: space.s1,
@@ -340,7 +340,7 @@ const styles = StyleSheet.create({
     gap: space.s2,
   },
   roundAdditional: {
-    backgroundColor: colors.statusOrangeSoft,
+    backgroundColor: colors.statusIndigoSoft,
     marginHorizontal: -space.s4,
     paddingHorizontal: space.s4,
   },
@@ -434,8 +434,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   startActive: {
-    backgroundColor: colors.accentAmber,
-    borderColor: colors.accentAmber,
+    backgroundColor: colors.accentBlue,
+    borderColor: colors.accentBlue,
   },
   readyActive: {
     backgroundColor: colors.primary,
