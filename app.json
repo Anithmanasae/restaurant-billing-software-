@@ -42,6 +42,14 @@
         {
           "photosPermission": "Allow SADA POS to access your photos to set menu item images."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "1.9.25"
+          }
+        }
       ]
     ],
     "extra": {
