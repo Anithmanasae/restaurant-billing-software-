@@ -13,7 +13,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { paths } from "@/lib/firestore/paths";
-import type { Order, OrderItem } from "@/types/models";
+import type { Order, OrderItem, Table } from "@/types/models";
 
 /**
  * Open a table: create a fresh open dine-in order and flip the table to
@@ -217,6 +217,79 @@ export async function closeTable(tableId: string): Promise<void> {
     updatedAt: serverTimestamp(),
   });
   await batch.commit();
+}
+
+/** Default seats for a table the cashier adds from the count setter. */
+const DEFAULT_CAPACITY = 4;
+
+/** A table is safe to remove only when nobody is seated at it. */
+function isFree(t: Table): boolean {
+  return t.status === "available" && !t.currentOrderId && !t.mergedInto;
+}
+
+/**
+ * Grow or shrink the floor to exactly `target` tables (owner/cashier setup).
+ *
+ * - Growing appends new tables numbered after the highest existing one, so
+ *   existing tables (and their live orders) are never touched.
+ * - Shrinking removes the highest-numbered FREE tables first. Occupied/billed
+ *   or merged tables are left in place; if that means the target can't be
+ *   reached, we remove as many as we safely can and throw so the UI can tell
+ *   the cashier to clear those tables first.
+ *
+ * Returns the resulting table count.
+ */
+export async function setTableCount(
+  tables: (Table & { id: string })[],
+  target: number,
+): Promise<number> {
+  const desired = Math.floor(target);
+  if (!Number.isFinite(desired) || desired < 0 || desired > 200) {
+    throw new Error("Enter a table count between 0 and 200.");
+  }
+
+  const current = tables.length;
+  if (desired === current) return current;
+
+  const batch = writeBatch(db);
+
+  if (desired > current) {
+    // Continue numbering after the current highest table number.
+    let next = tables.reduce((max, t) => Math.max(max, t.number), 0) + 1;
+    for (let i = current; i < desired; i++, next++) {
+      const tableRef = doc(paths.tables());
+      batch.set(tableRef, {
+        id: tableRef.id,
+        number: next,
+        label: `T${next}`,
+        capacity: DEFAULT_CAPACITY,
+        status: "available",
+        currentOrderId: null,
+        mergedInto: null,
+        updatedAt: serverTimestamp() as unknown as Table["updatedAt"],
+      });
+    }
+    await batch.commit();
+    return desired;
+  }
+
+  // Shrinking: drop the highest-numbered free tables first.
+  const removable = tables
+    .filter(isFree)
+    .sort((a, b) => b.number - a.number);
+  const toRemove = current - desired;
+  const removing = removable.slice(0, toRemove);
+  for (const t of removing) batch.delete(paths.table(t.id));
+  await batch.commit();
+
+  const remaining = current - removing.length;
+  if (removing.length < toRemove) {
+    throw new Error(
+      `Removed ${removing.length} free table(s). ${remaining - desired} table(s) ` +
+        "are still in use — clear or bill them, then try again.",
+    );
+  }
+  return remaining;
 }
 
 /** Σ price*qty over non-voided lines (paise). Mirrors money.ts's subtotal. */

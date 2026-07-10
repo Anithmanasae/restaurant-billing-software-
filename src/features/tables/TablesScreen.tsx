@@ -55,6 +55,9 @@ export function TablesScreen() {
   const insets = useSafeAreaInsets();
   const { profile, firebaseUser } = useAuth();
   const waiterId = profile?.uid ?? firebaseUser?.uid ?? "";
+  // Counter flow entry point: cashier/admin start a takeaway order (no table)
+  // straight from the floor — items → KOT → bill, all on the order screen.
+  const canTakeaway = profile?.role === "cashier" || profile?.role === "admin";
 
   // ── Live subscriptions ────────────────────────────────────────────────────
   const tablesQuery = useMemo(() => paths.tables(), []);
@@ -163,8 +166,21 @@ export function TablesScreen() {
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Tables</Text>
-        <Text style={styles.subtitle}>Manage your floor</Text>
+        <View style={styles.headerText}>
+          <Text style={styles.title}>Tables</Text>
+          <Text style={styles.subtitle}>Manage your floor</Text>
+        </View>
+        {canTakeaway && (
+          <Pressable
+            style={({ pressed }) => [styles.takeawayBtn, pressed && styles.pressed]}
+            onPress={() => {
+              tapFeedback();
+              router.push("/order");
+            }}
+          >
+            <Text style={styles.takeawayBtnText}>🥡 Takeaway</Text>
+          </Pressable>
+        )}
       </View>
 
       <View style={styles.filterRow}>
@@ -620,9 +636,25 @@ function SplitSheet({
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.floor },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: space.s3,
     paddingHorizontal: space.s4,
     paddingTop: space.s4,
     paddingBottom: space.s2,
+  },
+  headerText: { flex: 1 },
+  takeawayBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: radius.pill,
+    paddingVertical: space.s2,
+    paddingHorizontal: space.s4,
+  },
+  takeawayBtnText: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    color: colors.textInverse,
   },
   title: {
     fontFamily: fonts.extrabold,

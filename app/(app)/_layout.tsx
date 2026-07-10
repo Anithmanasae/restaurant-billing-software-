@@ -124,6 +124,8 @@ export default function AppLayout() {
       <Tabs.Screen name="bill-history" options={{ href: null }} />
       {/* Staff approvals/restrictions: reached from Account, not a tab. */}
       <Tabs.Screen name="staff" options={{ href: null }} />
+      {/* Table-count setup: reached from Account, not a tab. */}
+      <Tabs.Screen name="tables-setup" options={{ href: null }} />
     </Tabs>
   );
 }

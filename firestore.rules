@@ -275,9 +275,11 @@ service cloud.firestore {
 
       // ---- tables --------------------------------------------------------
       // Floor staff read tables and update occupancy/merge/shift status.
+      // The cashier (restaurant owner) sizes the floor from Account → Tables,
+      // so create/delete is admin + cashier (never waiter/kitchen).
       match /tables/{tableId} {
         allow read: if isActiveStaff();
-        allow create, delete: if isAdmin();
+        allow create, delete: if hasAnyRole(['admin', 'cashier']);
         allow update: if hasAnyRole(['admin', 'waiter', 'cashier']);
       }
 

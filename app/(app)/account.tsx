@@ -23,6 +23,8 @@ export default function AccountRoute() {
   const showMenuManagement = role === "cashier";
   // The cashier is the "2nd owner": approves signups, restricts/removes staff.
   const showStaff = role === "cashier" || role === "admin";
+  // Owner (cashier) + admin size the floor — how many tables the restaurant has.
+  const showTablesSetup = role === "cashier" || role === "admin";
   // Receipt header + thermal printer are billing concerns: admin + cashier.
   const showReceiptSetup = role === "cashier" || role === "admin";
 
@@ -114,6 +116,24 @@ export default function AccountRoute() {
             on the signup screen to join {restaurant.name}. You approve them
             from Staff Management.
           </Text>
+        </View>
+      )}
+
+      {showTablesSetup && (
+        <View style={styles.settingsCard}>
+          <Text style={styles.settingsTitle}>Floor</Text>
+          <Pressable
+            style={({ pressed }) => [styles.settingRow, pressed && styles.pressed]}
+            onPress={() => router.push("/tables-setup")}
+          >
+            <View style={styles.settingText}>
+              <Text style={styles.settingLabel}>Table Setup</Text>
+              <Text style={styles.settingHint}>
+                Set how many tables your restaurant has
+              </Text>
+            </View>
+            <Text style={styles.settingChevron}>›</Text>
+          </Pressable>
         </View>
       )}
 
