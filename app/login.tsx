@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Platform,
+  Image,
 } from "react-native";
 import { Redirect, router } from "expo-router";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -53,8 +54,13 @@ export default function Login() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.brand}>
-          <Text style={styles.logo}>🍽️</Text>
-          <Text style={styles.title}>SADA POS</Text>
+          <Image
+            source={require("../assets/brand/logo.png")}
+            style={styles.logo}
+            resizeMode="contain"
+            accessibilityRole="image"
+            accessibilityLabel="SADA POS"
+          />
           <Text style={styles.sub}>Sign in to continue</Text>
         </View>
 
@@ -119,10 +125,9 @@ const styles = StyleSheet.create({
     padding: space.s6,
     gap: space.s6,
   },
-  brand: { alignItems: "center", gap: space.s2 },
-  logo: { fontSize: 44 },
-  title: { fontSize: 28, fontWeight: "800", color: colors.primary },
-  sub: { color: colors.textMuted },
+  brand: { alignItems: "center", gap: space.s3 },
+  logo: { width: 200, height: 200 * (762 / 890) },
+  sub: { color: colors.textMuted, fontSize: 15 },
   form: { gap: space.s3 },
   label: { fontSize: 13, color: colors.textMuted, marginTop: space.s2 },
   input: {

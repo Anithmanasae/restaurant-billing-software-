@@ -7,9 +7,11 @@
     "scheme": "sadapos",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "icon": "./assets/brand/icon.png",
     "splash": {
+      "image": "./assets/brand/logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0047A1"
+      "backgroundColor": "#202020"
     },
     "ios": {
       "supportsTablet": true,
@@ -18,7 +20,8 @@
     "android": {
       "package": "com.sada.pos",
       "adaptiveIcon": {
-        "backgroundColor": "#0047A1"
+        "foregroundImage": "./assets/brand/adaptive-icon.png",
+        "backgroundColor": "#202020"
       },
       "permissions": [
         "android.permission.BLUETOOTH_CONNECT",
