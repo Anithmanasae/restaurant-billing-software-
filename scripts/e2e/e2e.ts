@@ -13,8 +13,11 @@
  */
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { getDoc, getDocs, query, where } from "firebase/firestore";
-import { auth } from "./firebase-shim";
-import { paths } from "@/lib/firestore/paths";
+import { auth, RESTAURANT_ID } from "./firebase-shim";
+import { paths, setActiveRestaurantId } from "@/lib/firestore/paths";
+
+// Node has no __DEV__ fallback — pin the tenant this suite runs against.
+setActiveRestaurantId(RESTAURANT_ID);
 import {
   createOrderLocal,
   mergeItemIntoLines,

@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SADA POS — Firestore Security Rules
+// SADA POS — Firestore Security Rules (multi-tenant SaaS)
 //
 // With no Cloud Functions, THESE RULES ARE THE SERVER-SIDE SECURITY BOUNDARY.
 // They run on Google's servers and cannot be bypassed by tampering with the
@@ -11,13 +11,68 @@ rules_version = '2';
 //   - paid bills are immutable
 //   - quantities/prices/totals must be non-negative and internally consistent
 //   - kitchen can only advance KOT status, nothing else
-//   - self-signup only creates PENDING waiter/kitchen profiles; the cashier
-//     approves them. Exactly one cashier can ever self-claim via meta/bootstrap.
+//   - self-signup only creates PENDING waiter/kitchen profiles — and only with
+//     the restaurant's real join code; the cashier approves them. Exactly one
+//     cashier can ever self-claim per restaurant via meta/bootstrap.
 //   - pending/denied/restricted accounts can read nothing but their own profile
+//
+// MULTI-TENANT: every app doc lives under restaurants/{restaurantId}, and every
+// role check reads the caller's profile under THAT restaurant — a member of
+// restaurant A resolves to no profile in restaurant B, so every cross-tenant
+// read or write dies in activeProfile(). Two top-level lookup collections
+// (userIndex, restaurantCodes) are write-once and bound to real membership via
+// getAfter, so neither can ever point somewhere the writer doesn't belong.
+//
+// A brand-new restaurant is born in ONE atomic owner-registration batch:
+//   restaurants/{rid}            root profile (name + joinCode)
+//   restaurants/{rid}/meta/bootstrap   { cashierClaimed: true }
+//   restaurants/{rid}/users/{uid}      the owner's approved+active CASHIER
+//   restaurantCodes/{joinCode}         → { restaurantId }
+//   userIndex/{uid}                    → { restaurantId }
+// Each doc's create rule getAfter()s the others, so none can be created alone.
 // ─────────────────────────────────────────────────────────────────────────────
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ---- userIndex/{uid} (top-level): which restaurant a login belongs to --
+    // Readable only by that login (get, never list). Created exactly once, by
+    // the account itself, and only when the same batch (or an earlier one)
+    // gives that account a users profile inside the named restaurant — an
+    // index entry can never point at a restaurant the user isn't a member of.
+    // Immutable afterwards: an account can never re-point itself at another
+    // restaurant.
+    match /userIndex/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['restaurantId'])
+        && request.resource.data.restaurantId is string
+        && getAfter(/databases/$(database)/documents/restaurants/$(request.resource.data.restaurantId)/users/$(uid)).data.uid == uid;
+      allow update, delete: if false;
+    }
+
+    // ---- restaurantCodes/{code} (top-level): join-code → restaurant --------
+    // Any signed-in user may GET one code (that's how the join flow resolves
+    // the code it was given) but never LIST them — codes can't be harvested.
+    // Created only inside the owner-registration batch: the code must match
+    // the new restaurant root's joinCode and the creator must come out of the
+    // batch as that restaurant's approved cashier. Immutable afterwards, so a
+    // code can never be re-pointed and (create-on-existing = update = denied)
+    // two restaurants can never share a code.
+    match /restaurantCodes/{code} {
+      allow get: if request.auth != null;
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['restaurantId'])
+        && request.resource.data.restaurantId is string
+        && getAfter(/databases/$(database)/documents/restaurants/$(request.resource.data.restaurantId)).data.joinCode == code
+        && getAfter(/databases/$(database)/documents/restaurants/$(request.resource.data.restaurantId)/users/$(request.auth.uid)).data.role == 'cashier'
+        && getAfter(/databases/$(database)/documents/restaurants/$(request.resource.data.restaurantId)/users/$(request.auth.uid)).data.status == 'approved';
+      allow update, delete: if false;
+    }
+
     match /restaurants/{restaurantId} {
 
       // ---- helpers -------------------------------------------------------
@@ -27,7 +82,9 @@ service cloud.firestore {
       }
 
       // Role is read from the caller's own profile document (server-side),
-      // so a client cannot claim a role it doesn't have.
+      // so a client cannot claim a role it doesn't have. Scoped to THIS
+      // restaurant: a member of another restaurant has no profile here, so
+      // every role check below fails for them.
       function profile() {
         return get(/databases/$(database)/documents/restaurants/$(restaurantId)/users/$(request.auth.uid)).data;
       }
@@ -55,8 +112,22 @@ service cloud.firestore {
         return hasRole('admin');
       }
 
+      // Is the caller a member (any status) of THIS restaurant?
+      function isMember() {
+        return signedIn()
+          && exists(/databases/$(database)/documents/restaurants/$(restaurantId)/users/$(request.auth.uid));
+      }
+
+      function rootPath() {
+        return /databases/$(database)/documents/restaurants/$(restaurantId);
+      }
+
       function bootstrapPath() {
         return /databases/$(database)/documents/restaurants/$(restaurantId)/meta/bootstrap;
+      }
+
+      function selfUserPath() {
+        return /databases/$(database)/documents/restaurants/$(restaurantId)/users/$(request.auth.uid);
       }
 
       function incomingDiffers(fields) {
@@ -64,27 +135,68 @@ service cloud.firestore {
           .hasOnly(fields);
       }
 
+      function validProfileName() {
+        return request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 60;
+      }
+
+      // The owner-registration batch, verified from the root-profile CREATE
+      // (so request.resource here is the incoming root doc): the new profile
+      // carries a well-formed joinCode, the matching restaurantCodes lookup
+      // points back HERE, the registrant comes out of the batch as this
+      // restaurant's approved+active cashier with the seat claimed, and their
+      // userIndex points here. getAfter ties them together — none of these
+      // docs can be created without the others landing in the same commit.
+      function isOwnerRegistrationBatch() {
+        return signedIn()
+          && request.resource.data.joinCode is string
+          && request.resource.data.joinCode.size() >= 4
+          && request.resource.data.joinCode.size() <= 12
+          && getAfter(/databases/$(database)/documents/restaurantCodes/$(request.resource.data.joinCode)).data.restaurantId == restaurantId
+          && getAfter(selfUserPath()).data.role == 'cashier'
+          && getAfter(selfUserPath()).data.status == 'approved'
+          && getAfter(selfUserPath()).data.active == true
+          && getAfter(bootstrapPath()).data.cashierClaimed == true
+          && getAfter(/databases/$(database)/documents/userIndex/$(request.auth.uid)).data.restaurantId == restaurantId;
+      }
+
       // ---- restaurant profile (this ROOT doc) ------------------------------
-      // Holds the receipt header: { name, addressLine?, updatedAt }. Any
-      // signed-in user may resolve it (it prints on every bill); only the
-      // admin/cashier edit it, and the name must be a non-empty string ≤ 60.
-      allow get: if signedIn();
-      allow write: if hasAnyRole(['admin', 'cashier'])
-        && request.resource.data.name is string
-        && request.resource.data.name.size() > 0
-        && request.resource.data.name.size() <= 60;
+      // Holds the receipt header { name, addressLine?, updatedAt } plus the
+      // staff joinCode. Readable by this restaurant's members only (it prints
+      // on every bill; pending staff may resolve the name too) — NOT by other
+      // restaurants' users, so join codes can't be harvested cross-tenant.
+      //
+      // CREATE is the owner-registration chicken-and-egg: there is no
+      // admin/cashier yet, so the registrant may create the root doc only as
+      // part of the full atomic registration batch (verified via getAfter).
+      // UPDATE stays admin/cashier-only and can never change the joinCode —
+      // the restaurantCodes/{code} lookup is immutable, so the pair can't
+      // drift apart.
+      allow get: if isMember();
+      allow list: if false;
+      allow create: if validProfileName() && isOwnerRegistrationBatch();
+      allow update: if hasAnyRole(['admin', 'cashier'])
+        && validProfileName()
+        && (!('joinCode' in resource.data)
+            || request.resource.data.joinCode == resource.data.joinCode);
+      allow delete: if false;
 
       // ---- users ---------------------------------------------------------
       // Anyone signed in can read their own profile (needed to resolve role
       // and to watch for approval). Admin + cashier read the whole staff list.
       //
       // Self-signup:
-      //  - waiter/kitchen create their OWN profile as pending+inactive; the
-      //    cashier must approve before the account can do anything.
-      //  - the very first cashier ("2nd owner") self-claims by atomically
-      //    creating an approved cashier profile AND flipping meta/bootstrap
-      //    cashierClaimed false→true in one batch. Once claimed, this branch
-      //    can never pass again.
+      //  - waiter/kitchen create their OWN profile as pending+inactive, and
+      //    must present this restaurant's joinCode (checked server-side
+      //    against the root doc) — a client that doesn't know the code cannot
+      //    plant a profile here. The cashier must approve before the account
+      //    can do anything.
+      //  - the owner's cashier profile self-claims by atomically creating an
+      //    approved cashier profile AND flipping meta/bootstrap
+      //    cashierClaimed false→true in one batch (the owner-registration
+      //    batch). Once claimed, this branch can never pass again for this
+      //    restaurant — one owner seat per restaurant, ever.
       //
       // Management: the cashier approves/denies/restricts/deletes waiter and
       // kitchen profiles only — never admin or cashier profiles, and can never
@@ -94,11 +206,13 @@ service cloud.firestore {
           && (request.auth.uid == uid || hasAnyRole(['admin', 'cashier']));
 
         allow create: if isAdmin()
-          // waiter/kitchen self-signup — always lands pending + inactive
+          // waiter/kitchen self-signup — always lands pending + inactive, and
+          // only with this restaurant's real join code
           || (signedIn() && request.auth.uid == uid
               && request.resource.data.role in ['waiter', 'kitchen']
               && request.resource.data.status == 'pending'
-              && request.resource.data.active == false)
+              && request.resource.data.active == false
+              && request.resource.data.joinCode == get(rootPath()).data.joinCode)
           // one-time cashier claim — must set the claim flag in the same batch
           || (signedIn() && request.auth.uid == uid
               && request.resource.data.role == 'cashier'
@@ -106,7 +220,10 @@ service cloud.firestore {
               && request.resource.data.active == true
               && !(exists(bootstrapPath())
                    && get(bootstrapPath()).data.cashierClaimed == true)
-              && getAfter(bootstrapPath()).data.cashierClaimed == true);
+              && getAfter(bootstrapPath()).data.cashierClaimed == true
+              // the restaurant must exist after this batch (created in it, or
+              // pre-existing) — no cashier claims on a phantom restaurant
+              && getAfter(rootPath()).data.name is string);
 
         allow update: if isAdmin()
           || (hasRole('cashier')
@@ -120,23 +237,21 @@ service cloud.firestore {
       }
 
       // ---- meta/bootstrap (one-time cashier claim flag) -------------------
-      // Publicly readable: the signup screen must know, BEFORE any account
-      // exists, whether to offer the "I'm the cashier" option. It holds a
-      // single boolean and nothing sensitive. Writes may only flip it to true
-      // in the same batch that creates the claimant's own cashier profile
-      // (verified via getAfter), so the flag can't be set — or reset — on its
-      // own by a non-admin.
+      // Readable by any signed-in user (it holds a single boolean and nothing
+      // sensitive). Writes may only flip it to true in the same batch that
+      // creates the claimant's own cashier profile (verified via getAfter),
+      // so the flag can't be set — or reset — on its own by a non-admin.
       match /meta/bootstrap {
-        allow read: if true;
+        allow read: if signedIn();
         allow create: if signedIn()
           && request.resource.data.keys().hasOnly(['cashierClaimed'])
           && request.resource.data.cashierClaimed == true
-          && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/users/$(request.auth.uid)).data.role == 'cashier';
+          && getAfter(selfUserPath()).data.role == 'cashier';
         allow update: if signedIn()
           && resource.data.cashierClaimed == false
           && request.resource.data.keys().hasOnly(['cashierClaimed'])
           && request.resource.data.cashierClaimed == true
-          && getAfter(/databases/$(database)/documents/restaurants/$(restaurantId)/users/$(request.auth.uid)).data.role == 'cashier';
+          && getAfter(selfUserPath()).data.role == 'cashier';
         allow delete: if isAdmin();
       }
 

@@ -9,6 +9,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "seed": "node scripts/seed.js",
+    "migrate": "node scripts/migrate.js",
     "compress-images": "node scripts/compressMenuImages.js"
   },
   "dependencies": {

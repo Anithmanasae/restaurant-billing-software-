@@ -4,7 +4,10 @@
  * This is the single source of truth for document shapes across every module.
  * Subagents: import from here, do NOT redefine these types locally.
  *
- * Firestore layout (multi-tenant, one restaurant per deployment):
+ * Firestore layout (multi-tenant SaaS — one APK serves every restaurant; the
+ * active restaurant is resolved at runtime from userIndex/{uid}):
+ *   userIndex/{uid}          -> { restaurantId }   // login → restaurant
+ *   restaurantCodes/{code}   -> { restaurantId }   // join code → restaurant
  *   restaurants/{restaurantId}/
  *     users/{uid}
  *     tables/{tableId}
@@ -32,14 +35,36 @@ export type Role = "admin" | "waiter" | "cashier" | "kitchen";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * What prints on the receipt header. Stored on the restaurant root doc so the
- * software can be resold: each deployment edits its own name/address from the
+ * What prints on the receipt header. Stored on the restaurant root doc so one
+ * APK serves many restaurants: each tenant edits its own name/address from the
  * Account tab and bills print under that identity.
  */
 export interface RestaurantProfile {
   name: string;
   addressLine?: string;
+  /** Short human code (e.g. "K7MPQ2") owners share so staff can join this
+   *  restaurant from the signup screen. Mirrored in restaurantCodes/{code}. */
+  joinCode?: string;
+  /** Whether new bills charge GST — written true at registration. The live
+   *  billing switch is still the device-local SettingsContext. */
+  gstEnabled?: boolean;
   updatedAt: Ts;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-tenant lookups (top-level collections, OUTSIDE /restaurants)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** userIndex/{uid} — which restaurant a login belongs to. Written once in the
+ *  same batch as the user's profile doc; immutable thereafter (rules). */
+export interface UserIndexEntry {
+  restaurantId: string;
+}
+
+/** restaurantCodes/{code} — join-code → restaurant lookup. Created atomically
+ *  with the restaurant at registration; immutable thereafter (rules). */
+export interface RestaurantCodeEntry {
+  restaurantId: string;
 }
 
 /**
@@ -57,6 +82,11 @@ export interface AppUser {
   status: UserStatus;
   active: boolean;
   photoUrl?: string;
+  /** On staff self-signup: the join code the person entered. The rules verify
+   *  it against the restaurant's real code, so knowing the code is enforced
+   *  server-side — a client can't plant a pending profile in a restaurant
+   *  whose code it doesn't know. */
+  joinCode?: string;
   createdAt: Ts;
 }
 

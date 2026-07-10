@@ -25,7 +25,7 @@ async function main() {
   });
   const db = admin.firestore();
 
-  // 1. Profile docs
+  // 1. Profile docs (+ their multi-tenant userIndex entries)
   const usersCol = db.collection(`restaurants/${RESTAURANT_ID}/users`);
   const snap = await usersCol.get();
   console.log(`--- Profiles in restaurants/${RESTAURANT_ID}/users: ${snap.size} ---`);
@@ -33,6 +33,7 @@ async function main() {
     const d = doc.data();
     console.log(`  deleting profile ${doc.id} (${d.role} · ${d.name} · ${d.email})`);
     await doc.ref.delete();
+    await db.doc(`userIndex/${doc.id}`).delete();
   }
 
   // 2. Auth logins (all of them — this project serves only this app)
@@ -44,6 +45,7 @@ async function main() {
     for (const u of page.users) {
       console.log(`  deleting auth user ${u.uid} (${u.email ?? "no email"})`);
       await admin.auth().deleteUser(u.uid);
+      await db.doc(`userIndex/${u.uid}`).delete(); // orphaned index, if any
       authCount++;
     }
     pageToken = page.pageToken;

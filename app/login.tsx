@@ -16,7 +16,7 @@ import { homePathForRole } from "@/features/auth/roleRoutes";
 import { colors, space, radius } from "@/theme/theme";
 
 export default function Login() {
-  const { signIn, profile, gate } = useAuth();
+  const { signIn, profile, gate, notice } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +78,8 @@ export default function Login() {
             placeholder="••••••••"
             placeholderTextColor={colors.textMuted}
           />
+          {/* e.g. bounced because the account isn't linked to a restaurant */}
+          {!error && notice && <Text style={styles.error}>{notice}</Text>}
           {error && <Text style={styles.error}>{error}</Text>}
           <Pressable
             style={({ pressed }) => [

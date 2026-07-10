@@ -18,6 +18,7 @@
  */
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const admin = require("firebase-admin");
 
 const SERVICE_ACCOUNT_PATH = path.join(__dirname, "serviceAccount.json");
@@ -77,19 +78,44 @@ function rupeesToPaise(rupees) {
   return Math.round(rupees * 100);
 }
 
+/** Same unambiguous alphabet as the app (no 0/O, 1/I/L lookalikes). */
+const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+function randomJoinCode() {
+  const bytes = crypto.randomBytes(6);
+  let out = "";
+  for (const b of bytes) out += CODE_ALPHABET[b % CODE_ALPHABET.length];
+  return out;
+}
+
 async function seedRestaurantProfile(db) {
   console.log(`\n--- Restaurant profile (restaurants/${RESTAURANT_ID}) ---`);
+  const rootRef = db.doc(`restaurants/${RESTAURANT_ID}`);
+
+  // Multi-tenant: the root doc carries the staff join code, mirrored in the
+  // top-level restaurantCodes lookup. Keep an existing code stable.
+  const existing = await rootRef.get();
+  let joinCode = existing.exists ? existing.data().joinCode : null;
+  if (!joinCode) {
+    do {
+      joinCode = randomJoinCode();
+    } while ((await db.doc(`restaurantCodes/${joinCode}`).get()).exists);
+  }
+
   // The root doc: what prints on the receipt header. Editable later from the
   // Account tab (admin/cashier), so only merge in defaults.
-  await db.doc(`restaurants/${RESTAURANT_ID}`).set(
+  await rootRef.set(
     {
       name: "SADA Restaurant",
       addressLine: "Bengaluru, Karnataka",
+      gstEnabled: true,
+      joinCode,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     },
     { merge: true }
   );
-  console.log("  receipt header seeded (name + address)");
+  await db.doc(`restaurantCodes/${joinCode}`).set({ restaurantId: RESTAURANT_ID });
+  console.log(`  receipt header seeded (name + address), join code ${joinCode}`);
 }
 
 async function seedStaff(db) {
@@ -126,6 +152,11 @@ async function seedStaff(db) {
       },
       { merge: true }
     );
+
+    // Multi-tenant: the app resolves the login's restaurant from this index.
+    await db
+      .doc(`userIndex/${userRecord.uid}`)
+      .set({ restaurantId: RESTAURANT_ID });
 
     created.push({ ...staff, uid: userRecord.uid, password: STAFF_PASSWORD });
   }

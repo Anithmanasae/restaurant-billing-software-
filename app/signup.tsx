@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   View,
   Text,
@@ -10,45 +10,48 @@ import {
   Platform,
 } from "react-native";
 import { Redirect, router } from "expo-router";
-import { getDoc } from "firebase/firestore";
 import { useAuth, type SignupRole } from "@/features/auth/AuthContext";
 import { friendlyAuthError } from "@/features/auth/authErrors";
 import { homePathForRole } from "@/features/auth/roleRoutes";
-import { paths } from "@/lib/firestore/paths";
 import { colors, space, radius } from "@/theme/theme";
 
+type Mode = "create" | "join";
+
 /**
- * First-time account creation.
+ * Self-service onboarding, two paths:
  *
- * Waiters and kitchen staff sign themselves up and land in a "waiting for
- * approval" state until the cashier accepts them. The cashier ("2nd owner")
- * seat is claimable exactly once — the option only appears while
- * meta/bootstrap says it is unclaimed, and the security rules enforce the
- * one-time claim server-side regardless of what this screen shows.
+ *  - "New restaurant": the owner names their restaurant and becomes its
+ *    approved cashier in one atomic registration (their own one-time owner
+ *    seat — every restaurant gets exactly one, enforced server-side).
+ *  - "Join a restaurant": staff enter the join code their manager shares
+ *    (shown on the cashier's Account screen) and land in the existing
+ *    waiting-for-approval flow.
  */
 export default function Signup() {
-  const { signUp, profile } = useAuth();
+  const { registerRestaurant, joinRestaurant, profile } = useAuth();
+  const [mode, setMode] = useState<Mode>("join");
+  const [restaurantName, setRestaurantName] = useState("");
+  const [joinCode, setJoinCode] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [role, setRole] = useState<SignupRole>("waiter");
-  const [cashierOpen, setCashierOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    // If unreadable (offline), keep the cashier option hidden — the rules
-    // would reject a stale claim anyway.
-    getDoc(paths.bootstrap())
-      .then((snap) => setCashierOpen(!snap.exists() || !snap.data()?.cashierClaimed))
-      .catch(() => setCashierOpen(false));
-  }, []);
 
   // Already signed in with a usable account → nothing to sign up for.
   if (profile) return <Redirect href={homePathForRole(profile.role)} />;
 
   async function onSubmit() {
+    if (mode === "create" && !restaurantName.trim()) {
+      setError("Enter your restaurant's name.");
+      return;
+    }
+    if (mode === "join" && !joinCode.trim()) {
+      setError("Enter the restaurant's join code.");
+      return;
+    }
     if (!name.trim()) {
       setError("Enter your name.");
       return;
@@ -64,10 +67,20 @@ export default function Signup() {
     setError(null);
     setBusy(true);
     try {
-      await signUp(name.trim(), email.trim(), password, role);
-      // Cashier claim is self-approving → straight into the app via index.
-      // Staff land on the live "waiting for approval" screen.
-      router.replace(role === "cashier" ? "/" : "/pending");
+      if (mode === "create") {
+        await registerRestaurant(
+          restaurantName.trim(),
+          name.trim(),
+          email.trim(),
+          password,
+        );
+        // The owner is a self-approved cashier → straight into the app.
+        router.replace("/");
+      } else {
+        await joinRestaurant(joinCode, name.trim(), email.trim(), password, role);
+        // Staff wait on the live "waiting for approval" screen.
+        router.replace("/pending");
+      }
     } catch (e) {
       setError(friendlyAuthError(e));
       setBusy(false);
@@ -77,15 +90,6 @@ export default function Signup() {
   const roles: { value: SignupRole; label: string; hint: string }[] = [
     { value: "waiter", label: "Waiter", hint: "Takes orders at tables" },
     { value: "kitchen", label: "Kitchen", hint: "Works the kitchen display" },
-    ...(cashierOpen
-      ? [
-          {
-            value: "cashier" as SignupRole,
-            label: "Cashier (owner)",
-            hint: "One-time setup — manages staff and billing",
-          },
-        ]
-      : []),
   ];
 
   return (
@@ -99,38 +103,93 @@ export default function Signup() {
       >
         <View style={styles.brand}>
           <Text style={styles.logo}>🍽️</Text>
-          <Text style={styles.title}>Create Account</Text>
+          <Text style={styles.title}>
+            {mode === "create" ? "Set Up Your Restaurant" : "Join Your Team"}
+          </Text>
           <Text style={styles.sub}>
-            {role === "cashier"
-              ? "Set up the cashier account for this restaurant"
+            {mode === "create"
+              ? "Create your restaurant and its owner (cashier) account"
               : "Your account needs the cashier's approval before you can sign in"}
           </Text>
         </View>
 
         <View style={styles.form}>
-          <Text style={styles.label}>I work as</Text>
-          <View style={styles.roleRow}>
-            {roles.map((r) => (
-              <Pressable
-                key={r.value}
-                style={[styles.roleChip, role === r.value && styles.roleChipOn]}
-                onPress={() => setRole(r.value)}
-                disabled={busy}
+          <View style={styles.modeRow}>
+            <Pressable
+              style={[styles.modeTab, mode === "join" && styles.modeTabOn]}
+              onPress={() => setMode("join")}
+              disabled={busy}
+            >
+              <Text
+                style={[styles.modeText, mode === "join" && styles.modeTextOn]}
               >
-                <Text
-                  style={[
-                    styles.roleChipText,
-                    role === r.value && styles.roleChipTextOn,
-                  ]}
-                >
-                  {r.label}
-                </Text>
-              </Pressable>
-            ))}
+                Join a restaurant
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modeTab, mode === "create" && styles.modeTabOn]}
+              onPress={() => setMode("create")}
+              disabled={busy}
+            >
+              <Text
+                style={[styles.modeText, mode === "create" && styles.modeTextOn]}
+              >
+                New restaurant
+              </Text>
+            </Pressable>
           </View>
-          <Text style={styles.roleHint}>
-            {roles.find((r) => r.value === role)?.hint}
-          </Text>
+
+          {mode === "create" ? (
+            <>
+              <Text style={styles.label}>Restaurant name</Text>
+              <TextInput
+                style={styles.input}
+                value={restaurantName}
+                onChangeText={setRestaurantName}
+                placeholder="e.g. SADA Restaurant"
+                placeholderTextColor={colors.textMuted}
+                maxLength={60}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.label}>Join code</Text>
+              <TextInput
+                style={[styles.input, styles.codeInput]}
+                value={joinCode}
+                onChangeText={(t) => setJoinCode(t.toUpperCase())}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                placeholder="6-character code from your manager"
+                placeholderTextColor={colors.textMuted}
+                maxLength={8}
+              />
+
+              <Text style={styles.label}>I work as</Text>
+              <View style={styles.roleRow}>
+                {roles.map((r) => (
+                  <Pressable
+                    key={r.value}
+                    style={[styles.roleChip, role === r.value && styles.roleChipOn]}
+                    onPress={() => setRole(r.value)}
+                    disabled={busy}
+                  >
+                    <Text
+                      style={[
+                        styles.roleChipText,
+                        role === r.value && styles.roleChipTextOn,
+                      ]}
+                    >
+                      {r.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.roleHint}>
+                {roles.find((r) => r.value === role)?.hint}
+              </Text>
+            </>
+          )}
 
           <Text style={styles.label}>Full name</Text>
           <TextInput
@@ -179,7 +238,13 @@ export default function Signup() {
             disabled={busy}
           >
             <Text style={styles.buttonText}>
-              {busy ? "Creating account…" : "Create Account"}
+              {busy
+                ? mode === "create"
+                  ? "Creating restaurant…"
+                  : "Creating account…"
+                : mode === "create"
+                  ? "Create Restaurant"
+                  : "Create Account"}
             </Text>
           </Pressable>
 
@@ -209,9 +274,26 @@ const styles = StyleSheet.create({
   },
   brand: { alignItems: "center", gap: space.s2 },
   logo: { fontSize: 44 },
-  title: { fontSize: 28, fontWeight: "800", color: colors.primary },
+  title: { fontSize: 26, fontWeight: "800", color: colors.primary },
   sub: { color: colors.textMuted, textAlign: "center" },
   form: { gap: space.s3 },
+  modeRow: {
+    flexDirection: "row",
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
+    padding: 3,
+  },
+  modeTab: {
+    flex: 1,
+    borderRadius: radius.pill,
+    paddingVertical: space.s2,
+    alignItems: "center",
+  },
+  modeTabOn: { backgroundColor: colors.primary },
+  modeText: { color: colors.text, fontWeight: "600", fontSize: 14 },
+  modeTextOn: { color: colors.textInverse },
   label: { fontSize: 13, color: colors.textMuted, marginTop: space.s2 },
   roleRow: { flexDirection: "row", gap: space.s2, flexWrap: "wrap" },
   roleChip: {
@@ -235,6 +317,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.text,
   },
+  codeInput: { letterSpacing: 4, fontWeight: "700" },
   error: { color: colors.danger, fontSize: 14, marginTop: space.s2 },
   button: {
     marginTop: space.s3,

@@ -36,6 +36,11 @@ export const auth = initializeAuth(app, {
 export const db = getFirestore(app);
 export const storage = getStorage(app);
 
-/** The single restaurant/tenant this deployment serves. */
+/**
+ * DEV-ONLY fallback tenant. The real restaurant id is resolved at runtime
+ * from userIndex/{uid} after sign-in (see paths.setActiveRestaurantId) — one
+ * APK serves every restaurant. This env id is only used in __DEV__ builds for
+ * pre-migration logins and local tooling.
+ */
 export const RESTAURANT_ID =
   process.env.EXPO_PUBLIC_RESTAURANT_ID ?? "sada-main";

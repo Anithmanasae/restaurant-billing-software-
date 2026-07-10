@@ -18,8 +18,8 @@ import {
   ref as storageRef,
   uploadBytes,
 } from "firebase/storage";
-import { paths } from "@/lib/firestore/paths";
-import { storage, RESTAURANT_ID } from "@/lib/firebase";
+import { getActiveRestaurantId, paths } from "@/lib/firestore/paths";
+import { storage } from "@/lib/firebase";
 import type { MenuCategory, MenuItem } from "@/types/models";
 
 // ── Menu items ───────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ export async function deleteMenuItem(id: string): Promise<void> {
 
 /**
  * Upload an image to Firebase Storage at
- * `restaurants/{RESTAURANT_ID}/menu/{itemId}/{filename}` and persist the
+ * `restaurants/{restaurantId}/menu/{itemId}/{filename}` and persist the
  * resulting download URL to the item's `imageUrl`. Returns the URL.
  */
 export async function uploadMenuItemImage(
@@ -75,7 +75,7 @@ export async function uploadMenuItemImage(
 ): Promise<string> {
   // In React Native the caller turns a local image uri into a Blob first:
   //   const blob = await (await fetch(uri)).blob();
-  const path = `restaurants/${RESTAURANT_ID}/menu/${itemId}/${fileName}`;
+  const path = `restaurants/${getActiveRestaurantId()}/menu/${itemId}/${fileName}`;
   const objectRef = storageRef(storage, path);
   await uploadBytes(objectRef, blob);
   const url = await getDownloadURL(objectRef);

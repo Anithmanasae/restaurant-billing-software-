@@ -5,12 +5,17 @@ import { useAuth } from "@/features/auth/AuthContext";
 import { useSettings } from "@/features/settings/SettingsContext";
 import { ReceiptDetailsCard } from "@/features/settings/ReceiptDetailsCard";
 import { PrinterSettingsCard } from "@/features/settings/PrinterSettingsCard";
+import { useRestaurantProfile } from "@/features/settings/useRestaurantProfile";
 import { colors, space, radius, shadow } from "@/theme/theme";
 
 /** Signed-in user's profile, billing settings + sign out. */
 export default function AccountRoute() {
   const { profile, signOut, role } = useAuth();
   const { gstEnabled, setGstEnabled } = useSettings();
+  // Join code lives on the restaurant root doc; only fetched for the roles
+  // that may share it.
+  const canShareJoinCode = role === "cashier" || role === "admin";
+  const { data: restaurant } = useRestaurantProfile();
 
   // Waiters/kitchen never generate bills — the tax switch is a billing control.
   const canToggleGst = role === "cashier" || role === "admin";
@@ -100,6 +105,18 @@ export default function AccountRoute() {
         </View>
       )}
 
+      {canShareJoinCode && restaurant?.joinCode && (
+        <View style={styles.settingsCard}>
+          <Text style={styles.settingsTitle}>Staff Join Code</Text>
+          <Text style={styles.joinCode}>{restaurant.joinCode}</Text>
+          <Text style={styles.settingHint}>
+            Share this code with new waiters and kitchen staff — they enter it
+            on the signup screen to join {restaurant.name}. You approve them
+            from Staff Management.
+          </Text>
+        </View>
+      )}
+
       {showStaff && (
         <View style={styles.settingsCard}>
           <Text style={styles.settingsTitle}>Staff</Text>
@@ -184,6 +201,14 @@ const styles = StyleSheet.create({
   settingLabel: { fontSize: 16, fontWeight: "600", color: colors.text },
   settingHint: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
   settingChevron: { fontSize: 24, color: colors.textMuted, fontWeight: "600" },
+  joinCode: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: colors.primary,
+    letterSpacing: 6,
+    textAlign: "center",
+    paddingVertical: space.s2,
+  },
   settingsDivider: { height: 1, backgroundColor: colors.border },
   signOutBtn: {
     backgroundColor: colors.surface,

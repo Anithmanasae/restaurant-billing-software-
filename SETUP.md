@@ -21,6 +21,11 @@ EXPO_PUBLIC_FIREBASE_APP_ID=1:1234567890:web:abcdef
 EXPO_PUBLIC_RESTAURANT_ID=sada-main
 ```
 
+> The app is **multi-tenant**: one build serves every restaurant, and each
+> login's restaurant is resolved at runtime from `userIndex/{uid}`.
+> `EXPO_PUBLIC_RESTAURANT_ID` is only a **dev-build fallback** for logins that
+> predate the migration (see `npm run migrate`).
+
 Make sure these are enabled in the console: **Firestore Database**,
 **Authentication → Email/Password**, **Storage**.
 
@@ -44,12 +49,18 @@ firebase deploy --only firestore:rules,firestore:indexes,storage
 
 ## 3. Seed sample data + logins
 
-Staff accounts are normally created in-app: the first person to sign up claims
-the one-time **Cashier (owner)** seat, and waiters/kitchen staff sign up and
-wait for the cashier's approval (Account → Staff Management). The seed script
-is an optional dev shortcut that pre-provisions one login per role (and marks
-the cashier seat claimed). `node scripts/resetUsers.js` wipes all accounts and
-reopens the cashier claim.
+Restaurants are normally created in-app: an owner picks **"New restaurant"**
+on the signup screen (becoming its approved cashier and getting a staff
+**join code**, shown on their Account screen), and waiters/kitchen staff pick
+**"Join a restaurant"** with that code, then wait for the cashier's approval
+(Account → Staff Management). The seed script is an optional dev shortcut that
+pre-provisions one login per role in `EXPO_PUBLIC_RESTAURANT_ID` (and marks
+that restaurant's cashier seat claimed). `node scripts/resetUsers.js` wipes
+all accounts and reopens that restaurant's cashier claim.
+
+If your project has data from before the multi-tenant change, run
+`npm run migrate` once — it gives the existing restaurant a join code and
+writes the `userIndex` entry for every existing login.
 
 Creates one user per role, sample menu categories/items, and 8 tables.
 
