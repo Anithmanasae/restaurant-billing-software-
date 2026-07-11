@@ -24,6 +24,6 @@ export const ROLE_ACCESS = {
   menuAdmin: ["admin"] as Role[],
   tables: ["admin", "waiter", "cashier"] as Role[],
   order: ["admin", "waiter", "cashier"] as Role[],
-  kds: ["admin", "kitchen"] as Role[],
+  kds: ["admin", "kitchen", "cashier"] as Role[],
   bills: ["admin", "cashier"] as Role[],
 };

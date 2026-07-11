@@ -15,10 +15,13 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { formatMoney } from "@/lib/money";
@@ -34,6 +37,10 @@ import {
   isPrintingAvailable,
   printToSavedPrinter,
 } from "@/lib/printer/printerService";
+import {
+  formatWhatsAppReceipt,
+  normalizeIndianMobile,
+} from "@/lib/receiptText";
 import { reprintBill, settleBill } from "./cashierApi";
 import { useBill, useOrder } from "./useCashierData";
 
@@ -65,6 +72,10 @@ export function BillDetail({
   const [selectedMode, setSelectedMode] = useState<PaymentMode | null>(null);
   const [busy, setBusy] = useState<null | "settle" | "print">(null);
   const [justPrinted, setJustPrinted] = useState(false);
+
+  // WhatsApp send: number-entry dialog state.
+  const [waOpen, setWaOpen] = useState(false);
+  const [waPhone, setWaPhone] = useState("");
 
   // Reflect the settled mode once a bill is paid.
   useEffect(() => {
@@ -139,6 +150,55 @@ export function BillDetail({
         );
       } finally {
         setBusy(null);
+      }
+    })();
+  }
+
+  /**
+   * WhatsApp receipt: build the plain-text bill and hand it to WhatsApp via
+   * deep link. With a number the customer's chat opens directly; left blank,
+   * WhatsApp shows its own contact picker. If the app isn't installed we fall
+   * back to the wa.me web link.
+   */
+  function onSendWhatsApp() {
+    if (!bill || !order) return;
+    const raw = waPhone.trim();
+    const phone = raw ? normalizeIndianMobile(raw) : null;
+    if (raw && !phone) {
+      Alert.alert(
+        "Invalid number",
+        "Enter the customer's 10-digit mobile number, or leave it blank to pick the contact inside WhatsApp."
+      );
+      return;
+    }
+    tapFeedback();
+    const text = encodeURIComponent(
+      formatWhatsAppReceipt({
+        profile: restaurant ?? { name: "SADA POS" },
+        bill,
+        order,
+        paymentLabel: bill.paymentMode
+          ? paymentLabel(bill.paymentMode)
+          : selectedMode
+            ? paymentLabel(selectedMode)
+            : null,
+      })
+    );
+    setWaOpen(false);
+    void (async () => {
+      try {
+        await Linking.openURL(
+          `whatsapp://send?text=${text}${phone ? `&phone=${phone}` : ""}`
+        );
+      } catch {
+        try {
+          await Linking.openURL(`https://wa.me/${phone ?? ""}?text=${text}`);
+        } catch {
+          Alert.alert(
+            "Couldn't open WhatsApp",
+            "Install WhatsApp on this device to send bills."
+          );
+        }
       }
     })();
   }
@@ -266,11 +326,19 @@ export function BillDetail({
                     : `Printed ${bill.printedCount}×`}
               </Text>
             </Pressable>
-            <View style={[styles.tile, styles.tileDisabled]}>
+            <Pressable
+              style={({ pressed }) => [styles.tile, pressed && styles.pressed]}
+              onPress={() => {
+                tapFeedback();
+                setWaPhone("");
+                setWaOpen(true);
+              }}
+              disabled={busy !== null}
+            >
               <Text style={styles.tileIcon}>💬</Text>
               <Text style={styles.tileLabel}>WhatsApp</Text>
-              <Text style={styles.tileMeta}>Coming soon</Text>
-            </View>
+              <Text style={styles.tileMeta}>Send bill</Text>
+            </Pressable>
           </View>
         </View>
 
@@ -303,6 +371,56 @@ export function BillDetail({
           </Pressable>
         )}
       </ScrollView>
+
+      {/* ── WhatsApp number dialog ─────────────────────────────────────────── */}
+      <Modal
+        visible={waOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setWaOpen(false)}
+      >
+        <View style={styles.waOverlay}>
+          <View style={styles.waSheet}>
+            <Text style={styles.waTitle}>Send bill on WhatsApp</Text>
+            <Text style={styles.waHint}>
+              Customer's mobile number — or leave blank to pick the contact
+              inside WhatsApp.
+            </Text>
+            <TextInput
+              style={styles.waInput}
+              value={waPhone}
+              onChangeText={setWaPhone}
+              keyboardType="phone-pad"
+              placeholder="10-digit mobile number"
+              placeholderTextColor={colors.textMuted}
+              maxLength={14}
+              autoFocus
+            />
+            <View style={styles.waActions}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.waBtn,
+                  styles.waBtnGhost,
+                  pressed && styles.pressed,
+                ]}
+                onPress={() => setWaOpen(false)}
+              >
+                <Text style={styles.waBtnGhostText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.waBtn,
+                  styles.waBtnPrimary,
+                  pressed && styles.pressedScale,
+                ]}
+                onPress={onSendWhatsApp}
+              >
+                <Text style={styles.waBtnPrimaryText}>Open WhatsApp</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -434,4 +552,45 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   paidBannerText: { fontSize: 16, fontWeight: "700", color: colors.primaryDark },
+
+  waOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    padding: space.s5,
+  },
+  waSheet: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: space.s5,
+    gap: space.s3,
+    ...shadow.card,
+  },
+  waTitle: { fontSize: 17, fontWeight: "700", color: colors.text },
+  waHint: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
+  waInput: {
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: space.s3,
+    paddingVertical: space.s3,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: colors.bg,
+  },
+  waActions: { flexDirection: "row", gap: space.s3, marginTop: space.s1 },
+  waBtn: {
+    flex: 1,
+    borderRadius: radius.md,
+    paddingVertical: space.s3,
+    alignItems: "center",
+  },
+  waBtnGhost: { backgroundColor: colors.surfaceMuted },
+  waBtnGhostText: { fontSize: 15, fontWeight: "600", color: colors.text },
+  waBtnPrimary: { backgroundColor: colors.primary },
+  waBtnPrimaryText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: colors.textInverse,
+  },
 });

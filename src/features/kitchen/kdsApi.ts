@@ -1,11 +1,11 @@
 /**
  * Kitchen Display (KDS) — Firestore write helpers.
  *
- * The kitchen role may ONLY change `status` and `printedCount` (plus the
- * `updatedAt` bookkeeping field). This is enforced server-side by
+ * The kitchen and cashier roles may ONLY change `status` and `printedCount`
+ * (plus the `updatedAt` bookkeeping field). This is enforced server-side by
  * `firestore.rules`:
  *
- *   hasRole('kitchen') && incomingDiffers(['status', 'printedCount', 'updatedAt'])
+ *   hasAnyRole(['kitchen', 'cashier']) && incomingDiffers(['status', 'printedCount', 'updatedAt'])
  *
  * so every update below touches *only* those keys — never items, prices, etc.
  * All writes go through `paths.kot(id)`; no component builds a path by hand.

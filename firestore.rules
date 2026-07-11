@@ -10,7 +10,7 @@ rules_version = '2';
 //   - waiters cannot finalize/pay bills; only cashiers/admins can
 //   - paid bills are immutable
 //   - quantities/prices/totals must be non-negative and internally consistent
-//   - kitchen can only advance KOT status, nothing else
+//   - kitchen/cashier can only advance KOT status, nothing else
 //   - self-signup only creates PENDING waiter/kitchen profiles — and only with
 //     the restaurant's real join code; the cashier approves them. Exactly one
 //     cashier can ever self-claim per restaurant via meta/bootstrap.
@@ -298,15 +298,15 @@ service cloud.firestore {
       }
 
       // ---- KOTs ----------------------------------------------------------
-      // Floor staff (waiter/cashier) create tickets. Kitchen can ONLY advance
-      // status/printedCount, never edit items or prices.
+      // Floor staff (waiter/cashier) create tickets. Kitchen and cashier can
+      // ONLY advance status/printedCount, never edit items or prices.
       match /kots/{kotId} {
         allow read: if isActiveStaff();
         allow create: if hasAnyRole(['admin', 'waiter', 'cashier']);
         allow update: if isAdmin()
-          || (hasRole('kitchen')
+          || (hasAnyRole(['kitchen', 'cashier'])
               && incomingDiffers(['status', 'printedCount', 'updatedAt']))
-          || (hasAnyRole(['admin', 'waiter', 'cashier'])
+          || (hasRole('waiter')
               && incomingDiffers(['printedCount', 'updatedAt']));
         allow delete: if isAdmin();
       }
