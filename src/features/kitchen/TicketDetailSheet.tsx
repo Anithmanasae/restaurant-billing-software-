@@ -6,7 +6,7 @@
  * pill, fire time, elapsed and reprint, the FULL item list with notes and
  * voided lines, and the same Start / Ready / Completed group actions.
  */
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import {
   Alert,
   Modal,
@@ -21,6 +21,14 @@ import { colors, radius, space } from "@/theme/theme";
 import { formatTimeIST } from "@/lib/date";
 import { animateNextLayout, tapFeedback } from "@/lib/feedback";
 import { ElapsedTime } from "@/components/ElapsedTime";
+import { useRestaurantProfile } from "@/features/settings/useRestaurantProfile";
+import { encodeKot } from "@/lib/printer/escpos";
+import {
+  PRINTING_UNAVAILABLE_MESSAGE,
+  getPaperWidth,
+  isPrintingAvailable,
+  printToSavedPrinter,
+} from "@/lib/printer/printerService";
 import type { Kot, KotItem, KotStatus } from "@/types/models";
 import { reprintKot } from "./kdsApi";
 import { completeGroup, readyGroup, startGroup } from "./groupActions";
@@ -97,6 +105,45 @@ export function TicketDetailSheet({
     );
   }, []);
 
+  // Reprint = real thermal print of that round's KOT, then bump printedCount
+  // (print first, count after — same order as BillDetail). In Expo Go the
+  // Bluetooth module doesn't exist, so explain instead of crashing.
+  const { data: restaurant } = useRestaurantProfile();
+  const [printingId, setPrintingId] = useState<string | null>(null);
+
+  const onReprint = useCallback(
+    (kot: LiveKot) => {
+      if (printingId) return;
+      if (!isPrintingAvailable()) {
+        Alert.alert("Printing unavailable", PRINTING_UNAVAILABLE_MESSAGE);
+        return;
+      }
+      tapFeedback();
+      setPrintingId(kot.id);
+      void (async () => {
+        try {
+          const paperWidth = await getPaperWidth();
+          const ticket = encodeKot({
+            profile: restaurant ?? { name: "SADA POS" },
+            kot,
+            paperWidth,
+          });
+          await printToSavedPrinter(ticket.bytes);
+          await reprintKot(kot); // bytes accepted → count the print
+        } catch (e) {
+          Alert.alert(
+            "Couldn’t print",
+            (e instanceof Error ? e.message : String(e)) +
+              "\n\nCheck Account > Printer Settings."
+          );
+        } finally {
+          setPrintingId(null);
+        }
+      })();
+    },
+    [printingId, restaurant]
+  );
+
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
@@ -136,7 +183,13 @@ export function TicketDetailSheet({
             showsVerticalScrollIndicator={false}
           >
             {group.tickets.map((t, round) => (
-              <RoundSection key={t.id} kot={t} round={round} />
+              <RoundSection
+                key={t.id}
+                kot={t}
+                round={round}
+                printing={printingId === t.id}
+                onReprint={onReprint}
+              />
             ))}
           </ScrollView>
 
@@ -199,7 +252,17 @@ export function TicketDetailSheet({
 }
 
 /** One KOT round: header (name · #ticket · status), meta line, full items. */
-function RoundSection({ kot, round }: { kot: LiveKot; round: number }) {
+function RoundSection({
+  kot,
+  round,
+  printing,
+  onReprint,
+}: {
+  kot: LiveKot;
+  round: number;
+  printing: boolean;
+  onReprint: (kot: LiveKot) => void;
+}) {
   const meta = STATUS_META[kot.status];
   const count = itemCount(kot);
   return (
@@ -224,10 +287,13 @@ function RoundSection({ kot, round }: { kot: LiveKot; round: number }) {
         <Pressable
           hitSlop={8}
           style={({ pressed }) => pressed && styles.pressed}
-          onPress={() => reprintKot(kot).catch(() => {})}
+          onPress={() => onReprint(kot)}
+          disabled={printing}
         >
           <Text style={styles.reprint}>
-            Reprint{kot.printedCount ? ` (${kot.printedCount})` : ""}
+            {printing
+              ? "Printing…"
+              : `Reprint${kot.printedCount ? ` (${kot.printedCount})` : ""}`}
           </Text>
         </Pressable>
       </View>

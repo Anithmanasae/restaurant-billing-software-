@@ -41,11 +41,20 @@ import {
 import { colors, fonts, radius, shadow, space } from "@/theme/theme";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useSettings } from "@/features/settings/SettingsContext";
+import { useRestaurantProfile } from "@/features/settings/useRestaurantProfile";
 import { generateBill } from "@/features/cashier/cashierApi";
 import { BillDetail } from "@/features/cashier/BillDetail";
+import { reprintKot } from "@/features/kitchen/kdsApi";
+import { encodeKot } from "@/lib/printer/escpos";
+import {
+  getPaperWidth,
+  isPrintingAvailable,
+  printToSavedPrinter,
+} from "@/lib/printer/printerService";
 import type { KotStatus, KotItemStatus, MenuItem, OrderItem } from "@/types/models";
 import {
   createOrderLocal,
+  fetchKot,
   flushPendingWrites,
   mergeItemIntoLines,
   sendKot,
@@ -90,6 +99,7 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
   const insets = useSafeAreaInsets();
   const { profile, role } = useAuth();
   const { gstEnabled } = useSettings();
+  const { data: restaurant } = useRestaurantProfile();
   const waiterId = profile?.uid ?? "";
 
   const isDineIn = !!tableId;
@@ -284,7 +294,10 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
       // The KOT transaction reads the order from the SERVER — make sure every
       // local (latency-compensated) edit has landed there first.
       await flushPendingWrites();
-      await sendKot(orderId, tableLabel);
+      const kotId = await sendKot(orderId, tableLabel);
+      // Fire-and-forget: the KOT is already committed, a printer problem must
+      // never block or undo the send (the on-screen KDS still has the ticket).
+      if (kotId) void autoPrintKot(kotId);
     } catch (e) {
       // Lines stay pending on failure — tell the waiter so they can retry.
       Alert.alert(
@@ -293,6 +306,33 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
       );
     } finally {
       setBusy(false);
+    }
+  };
+
+  /**
+   * Thermal KOT for the kitchen counter, printed right after the ticket is
+   * committed. In Expo Go the Bluetooth module doesn't exist — skip silently,
+   * the KDS screen is the fallback (same pattern as bill printing).
+   */
+  const autoPrintKot = async (kotId: string) => {
+    if (!isPrintingAvailable()) return;
+    try {
+      const kot = await fetchKot(kotId);
+      if (!kot) return;
+      const paperWidth = await getPaperWidth();
+      const ticket = encodeKot({
+        profile: restaurant ?? { name: "SADA POS" },
+        kot,
+        paperWidth,
+      });
+      await printToSavedPrinter(ticket.bytes);
+      await reprintKot(kot); // bytes accepted → count the print
+    } catch (e) {
+      Alert.alert(
+        "KOT saved but couldn’t print",
+        (e instanceof Error ? e.message : String(e)) +
+          "\n\nThe kitchen display still shows the ticket. Check Account > Printer Settings."
+      );
     }
   };
 

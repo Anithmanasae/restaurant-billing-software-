@@ -11,6 +11,7 @@
 import {
   Timestamp,
   doc,
+  getDoc,
   runTransaction,
   serverTimestamp,
   updateDoc,
@@ -249,6 +250,12 @@ export async function sendKot(
 
     return kotRef.id;
   });
+}
+
+/** One-shot read of a kot doc — used to print the ticket sendKot just made. */
+export async function fetchKot(kotId: string): Promise<Kot | null> {
+  const snap = await getDoc(paths.kot(kotId));
+  return snap.exists() ? { ...snap.data(), id: snap.id } : null;
 }
 
 /**

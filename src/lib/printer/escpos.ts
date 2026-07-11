@@ -10,7 +10,7 @@
  * The encoder also produces a plain-text `preview` (exactly the characters
  * sent, minus control codes) so layouts can be eyeballed without hardware.
  */
-import type { Bill, Order, RestaurantProfile } from "@/types/models";
+import type { Bill, Kot, Order, RestaurantProfile } from "@/types/models";
 import { formatDateIST, formatTimeIST } from "@/lib/date";
 import { TAX_CONFIG } from "@/config/tax";
 
@@ -216,6 +216,136 @@ export function encodeReceipt(input: ReceiptInput): EncodedReceipt {
   w.line("Thank You!");
   w.line("Visit Again");
   w.align("left");
+
+  w.line();
+  w.line();
+  w.line();
+  w.raw(FEED_AND_CUT);
+
+  return w.done();
+}
+
+// ── Kitchen Order Ticket ─────────────────────────────────────────────────────
+
+export interface KotInput {
+  profile: Pick<RestaurantProfile, "name">;
+  /** The kots doc. `createdAt` may still be null right after the send
+   *  transaction (serverTimestamp unresolved) — the ticket prints "now" then. */
+  kot: Pick<Kot, "ticketNumber" | "tableLabel" | "orderType" | "items"> &
+    Partial<Pick<Kot, "createdAt">>;
+  paperWidth: PaperWidth;
+}
+
+/** Qty column width on the KOT items table (qty + gap before the name). */
+const KOT_QTY_W = 5;
+
+/** Greedy word-wrap to `width` chars, hard-splitting words that don't fit. */
+function wrap(text: string, width: number): string[] {
+  const words = toAscii(text).split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (let word of words) {
+    while (word.length > width) {
+      if (line) {
+        lines.push(line);
+        line = "";
+      }
+      lines.push(word.slice(0, width));
+      word = word.slice(width);
+    }
+    if (!word) continue;
+    if (!line) line = word;
+    else if (line.length + 1 + word.length <= width) line += ` ${word}`;
+    else {
+      lines.push(line);
+      line = word;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
+function orderTypeLabel(t: Kot["orderType"]): string {
+  switch (t) {
+    case "dine-in":
+      return "Dine In";
+    case "takeaway":
+      return "Takeaway";
+    case "delivery":
+      return "Delivery";
+    default:
+      return t;
+  }
+}
+
+/**
+ * Encode a Kitchen Order Ticket. A KOT is a KITCHEN document, not a bill:
+ * item names, quantities and notes only — deliberately NO prices, GST or
+ * totals anywhere. Item rows print double-height bold so the kitchen reads
+ * them at a glance; voided lines sink to the end flagged "(VOID)".
+ */
+export function encodeKot({ profile, kot, paperWidth }: KotInput): EncodedReceipt {
+  const cols = lineWidth(paperWidth);
+  const divider = "-".repeat(cols);
+  const nameW = cols - KOT_QTY_W;
+  const w = new ReceiptWriter(cols);
+
+  const createdAt = kot.createdAt ? kot.createdAt.toDate() : new Date();
+  const active = kot.items.filter((i) => !i.voided && i.qty > 0);
+  const voided = kot.items.filter((i) => i.voided);
+
+  w.raw(INIT);
+
+  // Header: restaurant name + the ticket's destination, centered bold.
+  w.align("center");
+  w.raw(BOLD_ON);
+  w.line(profile.name.toUpperCase());
+  w.line("KITCHEN");
+  w.raw(BOLD_OFF);
+  w.align("left");
+  w.line(divider);
+
+  // Ticket number is the hero — kitchen and waiters talk in KOT numbers.
+  w.raw(BOLD_ON);
+  w.raw(SIZE_DOUBLE_HEIGHT);
+  w.line(`KOT #${kot.ticketNumber}`);
+  w.raw(SIZE_NORMAL);
+  w.line(
+    kot.orderType === "dine-in"
+      ? `Table ${kot.tableLabel} - Dine In`
+      : orderTypeLabel(kot.orderType)
+  );
+  w.raw(BOLD_OFF);
+  w.line(
+    spread(`Date: ${formatDateIST(createdAt)}`, `Time: ${formatTimeIST(createdAt)}`, cols)
+  );
+  w.line(divider);
+
+  // Items table — no amounts column, the whole width belongs to the name.
+  w.line("QTY".padEnd(KOT_QTY_W) + "ITEM");
+  w.line(divider);
+  w.raw(SIZE_DOUBLE_HEIGHT);
+  for (const item of [...active, ...voided]) {
+    const nameLines = wrap(item.name + (item.voided ? " (VOID)" : ""), nameW);
+    w.raw(BOLD_ON);
+    w.line(String(item.qty).padEnd(KOT_QTY_W) + nameLines[0]);
+    for (const rest of nameLines.slice(1)) {
+      w.line(" ".repeat(KOT_QTY_W) + rest);
+    }
+    w.raw(BOLD_OFF);
+    // Notes as indented sub-lines under their item.
+    const notes = (item.notes ?? "")
+      .split("\n")
+      .map((n) => n.trim())
+      .filter(Boolean);
+    for (const note of notes) {
+      for (const line of wrap(`- ${note}`, nameW)) {
+        w.line(" ".repeat(KOT_QTY_W) + line);
+      }
+    }
+  }
+  w.raw(SIZE_NORMAL);
+  w.line(divider);
 
   w.line();
   w.line();
