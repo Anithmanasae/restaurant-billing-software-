@@ -24,8 +24,12 @@ export default function RootLayout() {
   // Load the Plus Jakarta Sans family once, app-wide. Hold on a spinner until
   // the glyphs are ready (or bail through on error) so text never flashes in
   // the fallback face. Ionicons is preloaded too: without it each icon
-  // lazy-loads the font and silently renders blank if that load fails
-  // (e.g. cleaner apps wiping the cache on the client's device).
+  // lazy-loads the font and silently renders blank if that load fails.
+  // Runtime loading requires expo-file-system to be autolinked (expo-asset's
+  // downloadAsync throws without its file-permission interface — the cause of
+  // the blank icons in the first two client APKs), so it must stay a direct
+  // dependency. The same fonts are also embedded natively via the expo-font
+  // plugin in app.json, so a runtime-load failure falls back to working fonts.
   const [fontsLoaded, fontError] = useFonts({
     PlusJakartaSans_400Regular,
     PlusJakartaSans_500Medium,
