@@ -7,7 +7,6 @@
  */
 import { useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -17,6 +16,9 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FadeSlideIn } from "@/components/FadeSlideIn";
+import { MenuGridSkeleton } from "@/components/Skeleton";
+import { mediumTapFeedback, selectionFeedback } from "@/lib/feedback";
 import { colors, radius, shadow, space } from "@/theme/theme";
 import { deleteMenuItem, setMenuItemEnabled } from "./menuApi";
 import { useMenuCategories, useMenuItems } from "./useMenuData";
@@ -151,7 +153,10 @@ export function MenuManagementScreen() {
         </View>
         <Pressable
           style={({ pressed }) => [styles.manageBtn, pressed && styles.pressed]}
-          onPress={() => setCategoryManagerVisible(true)}
+          onPress={() => {
+            mediumTapFeedback();
+            setCategoryManagerVisible(true);
+          }}
         >
           <Text style={styles.manageBtnText}>Categories</Text>
         </Pressable>
@@ -183,7 +188,10 @@ export function MenuManagementScreen() {
               activeCategory === ALL && styles.chipActive,
               pressed && styles.pressed,
             ]}
-            onPress={() => setActiveCategory(ALL)}
+            onPress={() => {
+              selectionFeedback();
+              setActiveCategory(ALL);
+            }}
           >
             <Text
               style={[
@@ -204,7 +212,10 @@ export function MenuManagementScreen() {
                   active && styles.chipActive,
                   pressed && styles.pressed,
                 ]}
-                onPress={() => setActiveCategory(c.id)}
+                onPress={() => {
+                  selectionFeedback();
+                  setActiveCategory(c.id);
+                }}
               >
                 <Text
                   style={[styles.chipText, active && styles.chipTextActive]}
@@ -219,14 +230,13 @@ export function MenuManagementScreen() {
 
       {/* Content */}
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        <MenuGridSkeleton />
       ) : errorState ? (
         <View style={styles.center}>
           <Text style={styles.errorText}>{errorState.message}</Text>
         </View>
       ) : (
+        <FadeSlideIn>
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
@@ -262,6 +272,7 @@ export function MenuManagementScreen() {
             ))
           )}
         </ScrollView>
+        </FadeSlideIn>
       )}
 
       {/* Floating add button */}
@@ -271,7 +282,10 @@ export function MenuManagementScreen() {
           { bottom: insets.bottom + space.s4 },
           pressed && styles.fabPressed,
         ]}
-        onPress={openAdd}
+        onPress={() => {
+          mediumTapFeedback(); // weighty tap opening the add-item form
+          openAdd();
+        }}
       >
         <Text style={styles.fabText}>＋ Add Item</Text>
       </Pressable>

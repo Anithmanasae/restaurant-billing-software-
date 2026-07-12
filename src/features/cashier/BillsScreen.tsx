@@ -23,6 +23,13 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { formatMoney } from "@/lib/money";
+import { FadeSlideIn } from "@/components/FadeSlideIn";
+import { BillListSkeleton } from "@/components/Skeleton";
+import {
+  mediumTapFeedback,
+  successFeedback,
+  tapFeedback,
+} from "@/lib/feedback";
 import { colors, radius, shadow, space } from "@/theme/theme";
 import type { Bill, Order, Table } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -113,6 +120,7 @@ export function BillsScreen() {
 
   async function handleGenerate(order: Order & { id: string }) {
     if (generatingId) return;
+    mediumTapFeedback(); // weighty tap kicking off billing
     setGeneratingId(order.id);
     try {
       const billId = await generateBill(
@@ -121,6 +129,7 @@ export function BillsScreen() {
         orderLabel(order),
         gstEnabled
       );
+      successFeedback(); // bill generated
       setSelectedBillId(billId);
     } catch (e) {
       Alert.alert("Could not bill", e instanceof Error ? e.message : String(e));
@@ -147,6 +156,10 @@ export function BillsScreen() {
         </View>
       </View>
 
+      {loading ? (
+        <BillListSkeleton />
+      ) : (
+      <FadeSlideIn>
       <SectionList
         sections={sections}
         keyExtractor={(item) =>
@@ -169,7 +182,10 @@ export function BillsScreen() {
             <BillCard
               bill={item.bill}
               now={now}
-              onPress={() => setSelectedBillId(item.bill.id)}
+              onPress={() => {
+                tapFeedback(); // opening the bill detail sheet
+                setSelectedBillId(item.bill.id);
+              }}
             />
           ) : item.kind === "order" ? (
             <OrderCard
@@ -189,11 +205,11 @@ export function BillsScreen() {
           )
         }
         ListEmptyComponent={
-          <Text style={styles.empty}>
-            {loading ? "Loading bills…" : "No bills to settle right now."}
-          </Text>
+          <Text style={styles.empty}>No bills to settle right now.</Text>
         }
       />
+      </FadeSlideIn>
+      )}
 
       <Modal
         visible={selectedBillId !== null}

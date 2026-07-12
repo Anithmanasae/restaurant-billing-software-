@@ -19,6 +19,11 @@ export function tapFeedback(): void {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 }
 
+/** Subtle selection tick — switching tabs/pages, filter chips, segments. */
+export function selectionFeedback(): void {
+  Haptics.selectionAsync().catch(() => {});
+}
+
 /** Medium impact for a weightier tap (e.g. opening a table card or sheet). */
 export function mediumTapFeedback(): void {
   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});

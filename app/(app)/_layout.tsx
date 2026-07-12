@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet } from "react-native";
 import { BlurView } from "expo-blur";
 import { useAuth } from "@/features/auth/AuthContext";
+import { selectionFeedback } from "@/lib/feedback";
 import { ROLE_ACCESS } from "@/features/auth/roleRoutes";
 import { Loading } from "@/components/Loading";
 import { colors, fonts } from "@/theme/theme";
@@ -38,8 +39,12 @@ export default function AppLayout() {
 
   return (
     <Tabs
+      // Haptic tick on every page switch from the tab bar.
+      screenListeners={{ tabPress: () => selectionFeedback() }}
       screenOptions={{
         headerShown: false,
+        // Cross-fade + subtle shift between tabs instead of a hard cut.
+        animation: "shift",
         // Don't mount hidden tabs up front, and freeze them once blurred so
         // background screens skip re-renders from live Firestore snapshots.
         lazy: true,

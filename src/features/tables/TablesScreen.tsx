@@ -25,6 +25,8 @@ import { paths } from "@/lib/firestore/paths";
 import { useCollectionData } from "@/lib/firestore/useRealtime";
 import { formatMoney } from "@/lib/money";
 import { tapFeedback } from "@/lib/feedback";
+import { FadeSlideIn } from "@/components/FadeSlideIn";
+import { TableGridSkeleton } from "@/components/Skeleton";
 import { colors, fonts, radius, space } from "@/theme/theme";
 import type { Kot, Order, OrderItem, Table, TableStatus } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -209,31 +211,35 @@ export function TablesScreen() {
         })}
       </View>
 
-      <FlatList
-        data={visibleTables}
-        keyExtractor={(t) => t.id}
-        numColumns={2}
-        columnWrapperStyle={styles.column}
-        contentContainerStyle={[
-          styles.grid,
-          { paddingBottom: insets.bottom + space.s6 },
-        ]}
-        ListEmptyComponent={
-          <Text style={styles.empty}>
-            {loading ? "Loading floor…" : "No tables to show."}
-          </Text>
-        }
-        renderItem={({ item }) => (
-          <TableCard
-            table={item}
-            order={orderByTable.get(item.id) ?? null}
-            primary={
-              item.mergedInto ? tableById.get(item.mergedInto) ?? null : null
+      {loading ? (
+        <TableGridSkeleton />
+      ) : (
+        <FadeSlideIn>
+          <FlatList
+            data={visibleTables}
+            keyExtractor={(t) => t.id}
+            numColumns={2}
+            columnWrapperStyle={styles.column}
+            contentContainerStyle={[
+              styles.grid,
+              { paddingBottom: insets.bottom + space.s6 },
+            ]}
+            ListEmptyComponent={
+              <Text style={styles.empty}>No tables to show.</Text>
             }
-            onPress={handleCardPress}
+            renderItem={({ item }) => (
+              <TableCard
+                table={item}
+                order={orderByTable.get(item.id) ?? null}
+                primary={
+                  item.mergedInto ? tableById.get(item.mergedInto) ?? null : null
+                }
+                onPress={handleCardPress}
+              />
+            )}
           />
-        )}
-      />
+        </FadeSlideIn>
+      )}
 
       {/* Action sheet modal */}
       <Modal

@@ -18,7 +18,6 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Modal,
@@ -35,9 +34,12 @@ import { formatMoney } from "@/lib/money";
 import {
   animateNextLayout,
   mediumTapFeedback,
+  selectionFeedback,
   successFeedback,
   tapFeedback,
 } from "@/lib/feedback";
+import { FadeSlideIn } from "@/components/FadeSlideIn";
+import { MenuGridSkeleton } from "@/components/Skeleton";
 import { colors, fonts, radius, shadow, space } from "@/theme/theme";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useSettings } from "@/features/settings/SettingsContext";
@@ -431,32 +433,32 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
 
       {/* Menu grid */}
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        <MenuGridSkeleton />
       ) : errorState ? (
         <View style={styles.center}>
           <Text style={styles.errorText}>Couldn’t load the menu.</Text>
           <Text style={styles.emptySub}>{errorState.message}</Text>
         </View>
       ) : (
-        <FlatList
-          data={gridData}
-          keyExtractor={(it) => it.id}
-          renderItem={renderCard}
-          numColumns={2}
-          columnWrapperStyle={styles.gridRow}
-          contentContainerStyle={[
-            styles.gridContent,
-            { paddingBottom: insets.bottom + (lines.length > 0 ? 96 : space.s6) },
-          ]}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={
-            <View style={styles.center}>
-              <Text style={styles.emptyText}>No items found.</Text>
-            </View>
-          }
-        />
+        <FadeSlideIn>
+          <FlatList
+            data={gridData}
+            keyExtractor={(it) => it.id}
+            renderItem={renderCard}
+            numColumns={2}
+            columnWrapperStyle={styles.gridRow}
+            contentContainerStyle={[
+              styles.gridContent,
+              { paddingBottom: insets.bottom + (lines.length > 0 ? 96 : space.s6) },
+            ]}
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.center}>
+                <Text style={styles.emptyText}>No items found.</Text>
+              </View>
+            }
+          />
+        </FadeSlideIn>
       )}
 
       {/* Collapsed cart bar */}
@@ -605,7 +607,10 @@ function Chip({
         active && styles.chipActive,
         pressed && styles.pressed,
       ]}
-      onPress={onPress}
+      onPress={() => {
+        selectionFeedback(); // tick on category switch
+        onPress();
+      }}
     >
       <Text style={[styles.chipText, active && styles.chipTextActive]}>
         {label}

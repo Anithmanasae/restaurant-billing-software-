@@ -14,7 +14,6 @@
  */
 import { useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
@@ -23,6 +22,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { orderBy, query, Timestamp, where } from "firebase/firestore";
+import { FadeSlideIn } from "@/components/FadeSlideIn";
+import { KdsGridSkeleton } from "@/components/Skeleton";
+import { selectionFeedback } from "@/lib/feedback";
 import { paths } from "@/lib/firestore/paths";
 import { useCollectionData } from "@/lib/firestore/useRealtime";
 import { startOfDayIST } from "@/lib/date";
@@ -178,9 +180,7 @@ export function KitchenDisplayScreen() {
 
       {/* Board */}
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        <KdsGridSkeleton />
       ) : error ? (
         <View style={styles.center}>
           <Text style={styles.errorText}>Couldn’t load tickets.</Text>
@@ -192,6 +192,7 @@ export function KitchenDisplayScreen() {
           onLayout={(e) => setGridH(e.nativeEvent.layout.height)}
         >
           {cardH > 0 && (
+            <FadeSlideIn>
             <FlatList
               data={gridData}
               keyExtractor={(g) => g.key}
@@ -222,6 +223,7 @@ export function KitchenDisplayScreen() {
                 </View>
               }
             />
+            </FadeSlideIn>
           )}
         </View>
       )}
@@ -252,7 +254,10 @@ function StatusTab({
 }) {
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        selectionFeedback(); // tick on board-tab switch
+        onPress();
+      }}
       style={({ pressed }) => [
         styles.tab,
         active && { borderBottomColor: color },

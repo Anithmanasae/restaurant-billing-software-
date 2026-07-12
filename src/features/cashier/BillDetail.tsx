@@ -26,6 +26,7 @@ import {
 } from "react-native";
 import { formatMoney } from "@/lib/money";
 import { tapFeedback } from "@/lib/feedback";
+import { ReceiptSkeleton } from "@/components/Skeleton";
 import { colors, radius, shadow, space } from "@/theme/theme";
 import type { PaymentMode } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
@@ -205,9 +206,8 @@ export function BillDetail({
 
   if (billLoading || !bill) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color={colors.primary} />
-        <Text style={styles.loadingText}>Loading bill…</Text>
+      <View style={styles.container}>
+        <ReceiptSkeleton />
       </View>
     );
   }

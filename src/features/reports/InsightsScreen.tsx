@@ -9,7 +9,6 @@
  */
 import { useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,6 +16,9 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { FadeSlideIn } from "@/components/FadeSlideIn";
+import { InsightsSkeleton } from "@/components/Skeleton";
+import { selectionFeedback } from "@/lib/feedback";
 import { colors, radius, shadow, space } from "@/theme/theme";
 import { formatMoney } from "@/lib/money";
 import type { OrderType, PaymentMode } from "@/types/models";
@@ -132,7 +134,10 @@ export function InsightsScreen() {
             <Pressable
               key={t}
               style={[styles.segmentBtn, active && styles.segmentBtnActive]}
-              onPress={() => setTab(t)}
+              onPress={() => {
+                selectionFeedback();
+                setTab(t);
+              }}
             >
               <Text
                 style={[
@@ -156,7 +161,10 @@ export function InsightsScreen() {
             <Pressable
               key={o.key}
               style={[styles.rangeChip, active && styles.rangeChipActive]}
-              onPress={() => setRangeKind(o.key)}
+              onPress={() => {
+                selectionFeedback();
+                setRangeKind(o.key);
+              }}
             >
               <Text
                 style={[
@@ -172,14 +180,13 @@ export function InsightsScreen() {
       </View>
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        <InsightsSkeleton />
       ) : error ? (
         <View style={styles.center}>
           <Text style={styles.errorText}>{error.message}</Text>
         </View>
       ) : (
+        <FadeSlideIn>
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
@@ -375,6 +382,7 @@ export function InsightsScreen() {
             </>
           )}
         </ScrollView>
+        </FadeSlideIn>
       )}
     </View>
   );
