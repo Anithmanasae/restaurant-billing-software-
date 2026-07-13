@@ -1,6 +1,6 @@
 /**
  * Firebase app initialization for React Native / Expo — the ONLY place the SDK
- * is bootstrapped. Import `db`, `auth`, `storage` from here.
+ * is bootstrapped. Import `db` and `auth` from here.
  *
  * Two RN-specific details vs. a web app:
  *  1. Auth uses `initializeAuth` + AsyncStorage persistence so a signed-in
@@ -15,7 +15,6 @@ import { initializeApp } from "firebase/app";
 // type exports but exists at runtime in the RN build of the SDK.
 import { initializeAuth, getReactNativePersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
-import { getStorage } from "firebase/storage";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const firebaseConfig = {
@@ -34,7 +33,6 @@ export const auth = initializeAuth(app, {
 });
 
 export const db = getFirestore(app);
-export const storage = getStorage(app);
 
 /**
  * DEV-ONLY fallback tenant. The real restaurant id is resolved at runtime

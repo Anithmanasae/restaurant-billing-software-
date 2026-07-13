@@ -13,13 +13,7 @@ import {
   setDoc,
   updateDoc,
 } from "firebase/firestore";
-import {
-  getDownloadURL,
-  ref as storageRef,
-  uploadBytes,
-} from "firebase/storage";
-import { getActiveRestaurantId, paths } from "@/lib/firestore/paths";
-import { storage } from "@/lib/firebase";
+import { paths } from "@/lib/firestore/paths";
 import type { MenuCategory, MenuItem } from "@/types/models";
 
 // ── Menu items ───────────────────────────────────────────────────────────────
@@ -63,25 +57,9 @@ export async function deleteMenuItem(id: string): Promise<void> {
   await deleteDoc(paths.menuItem(id));
 }
 
-/**
- * Upload an image to Firebase Storage at
- * `restaurants/{restaurantId}/menu/{itemId}/{filename}` and persist the
- * resulting download URL to the item's `imageUrl`. Returns the URL.
- */
-export async function uploadMenuItemImage(
-  itemId: string,
-  blob: Blob,
-  fileName = `${Date.now()}.jpg`
-): Promise<string> {
-  // In React Native the caller turns a local image uri into a Blob first:
-  //   const blob = await (await fetch(uri)).blob();
-  const path = `restaurants/${getActiveRestaurantId()}/menu/${itemId}/${fileName}`;
-  const objectRef = storageRef(storage, path);
-  await uploadBytes(objectRef, blob);
-  const url = await getDownloadURL(objectRef);
-  await updateMenuItem(itemId, { imageUrl: url });
-  return url;
-}
+// Menu photos are not uploaded anywhere: the form stores a compressed base64
+// data URI in the item's `imageUrl` field, so the image lives inside the
+// Firestore document itself (Firebase Storage would require the paid plan).
 
 // ── Menu categories ──────────────────────────────────────────────────────────
 

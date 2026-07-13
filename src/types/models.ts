@@ -138,6 +138,11 @@ export interface MenuItem {
   /** Price in paise (integer) to avoid float rounding. ₹85.00 => 8500. */
   price: number;
   enabled: boolean;
+  /**
+   * Item photo. New uploads store a compressed base64 `data:image/jpeg` URI
+   * inline (no Firebase Storage on the free plan); older docs may still hold
+   * an https URL. Both render the same via `resolveMenuImage`.
+   */
   imageUrl?: string;
   description?: string;
   sku?: string;

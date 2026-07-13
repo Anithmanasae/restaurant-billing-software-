@@ -46,7 +46,4 @@ if (USE_EMULATOR) {
   connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
   connectFirestoreEmulator(db, "127.0.0.1", 8080);
 }
-// storage is not used by the billing flow; keep the export shape.
-export const storage = null as unknown as never;
-
 export const RESTAURANT_ID = env.EXPO_PUBLIC_RESTAURANT_ID ?? "sada-main";

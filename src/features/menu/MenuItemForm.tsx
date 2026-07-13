@@ -1,14 +1,17 @@
 /**
  * Add / Edit menu item modal form. Reuses the ported menuApi writes:
  *   - createMenuItem / updateMenuItem
- *   - uploadMenuItemImage (create the item first to obtain its id)
+ *
+ * The photo is stored inside the Firestore document itself as a base64 data
+ * URI in `imageUrl` (no Firebase Storage — that product requires the paid
+ * Blaze plan). compressMenuImage shrinks the photo far below the 1 MiB
+ * Firestore document limit before encoding.
  *
  * Price is entered in rupees (₹) and stored as paise via rupeesToPaise.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -28,7 +31,6 @@ import type { MenuCategory, MenuItem } from "@/types/models";
 import {
   createMenuItem,
   updateMenuItem,
-  uploadMenuItemImage,
   type MenuItemInput,
 } from "./menuApi";
 import type { MenuCategoryDoc, MenuItemDoc } from "./useMenuData";
@@ -51,15 +53,16 @@ function paiseToRupeeString(paise: number): string {
 
 /**
  * Menu card thumbnails render at ~140-200pt, so anything beyond this edge
- * length is wasted Storage space and download time on restaurant Wi-Fi.
+ * length is wasted Firestore space and download time on restaurant Wi-Fi.
  */
-const MAX_IMAGE_DIM = 800;
+const MAX_IMAGE_DIM = 640;
 
 /**
- * Downscale the picked photo to at most MAX_IMAGE_DIM on its longest edge and
- * re-encode as JPEG at 70% quality. A typical 3-4 MB camera photo comes out
- * around 60-120 KB, which keeps Firebase Storage usage small while staying
- * sharp at menu-card size.
+ * Downscale the picked photo to at most MAX_IMAGE_DIM on its longest edge,
+ * re-encode as JPEG at 60% quality and return it as a base64 data URI. A
+ * typical 3-4 MB camera photo comes out around 40-100 KB (~55-135 KB once
+ * base64-encoded) — small enough to live inside the item's Firestore document
+ * (1 MiB limit) while staying sharp at menu-card size.
  */
 async function compressMenuImage(
   asset: ImagePicker.ImagePickerAsset
@@ -74,10 +77,12 @@ async function compressMenuImage(
       ]
     : [];
   const result = await ImageManipulator.manipulateAsync(asset.uri, actions, {
-    compress: 0.7,
+    compress: 0.6,
     format: ImageManipulator.SaveFormat.JPEG,
+    base64: true,
   });
-  return result.uri;
+  if (!result.base64) throw new Error("Image encoding returned no data.");
+  return `data:image/jpeg;base64,${result.base64}`;
 }
 
 export function MenuItemForm({
@@ -101,10 +106,6 @@ export function MenuItemForm({
   const [error, setError] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
-  // If a retry happens after the item doc was already created, reuse that id
-  // instead of creating a duplicate.
-  const createdIdRef = useRef<string | null>(null);
-
   // The primary button unlocks only once the required fields are filled:
   // a name, a category, and a price greater than zero.
   const priceNum = Number(priceRupees);
@@ -118,7 +119,6 @@ export function MenuItemForm({
   // Reset the form whenever it opens for a different item.
   useEffect(() => {
     if (!visible) return;
-    createdIdRef.current = null;
     setName(item?.name ?? "");
     setCategoryId(item?.categoryId ?? defaultCategoryId ?? "");
     setPriceRupees(item ? paiseToRupeeString(item.price) : "");
@@ -149,9 +149,12 @@ export function MenuItemForm({
       const asset = result.assets[0];
       try {
         setLocalImageUri(await compressMenuImage(asset));
+        setError(null);
       } catch {
-        // Compression is an optimization; fall back to the original photo.
-        setLocalImageUri(asset.uri);
+        // Unlike a hosted-file setup there is no fallback here: a raw photo
+        // won't fit in the Firestore document, and a local file:// path would
+        // only resolve on this phone.
+        setError("Couldn't process that photo — please try another one.");
       }
     }
   };
@@ -169,34 +172,15 @@ export function MenuItemForm({
         enabled,
         description: description.trim() || undefined,
         sku: sku.trim() || undefined,
-        imageUrl: existingImageUrl,
+        // A newly picked photo is already a compressed base64 data URI, so it
+        // is saved inside the document like any other field.
+        imageUrl: localImageUri ?? existingImageUrl,
       };
 
-      // Create the item first (to obtain an id) so the image can be uploaded
-      // under that id, then persist the download URL onto the item.
-      const itemId =
-        item?.id ?? createdIdRef.current ?? (await createMenuItem(base));
-      createdIdRef.current = itemId;
       if (item) {
-        await updateMenuItem(itemId, base);
-      }
-
-      // Photo upload is best-effort: the item is already saved, so a Storage
-      // failure (e.g. Storage not enabled on the Firebase project) must not
-      // block the menu edit — save without the photo and tell the user.
-      if (localImageUri) {
-        try {
-          const blob = await (await fetch(localImageUri)).blob();
-          await uploadMenuItemImage(itemId, blob);
-        } catch (e) {
-          const detail = e instanceof Error ? e.message : String(e);
-          Alert.alert(
-            "Item saved without photo",
-            detail.includes("storage/")
-              ? "Photo uploads aren't available — Firebase Storage isn't set up on this project yet. The item was saved without its photo."
-              : `The item was saved, but the photo upload failed: ${detail}`
-          );
-        }
+        await updateMenuItem(item.id, base);
+      } else {
+        await createMenuItem(base);
       }
 
       onClose();
