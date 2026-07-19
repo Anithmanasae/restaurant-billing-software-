@@ -28,6 +28,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { rupeesToPaise } from "@/lib/money";
 import { colors, radius, space } from "@/theme/theme";
 import type { MenuCategory, MenuItem } from "@/types/models";
+import { DietBadge } from "./DietBadge";
 import {
   createMenuItem,
   updateMenuItem,
@@ -97,6 +98,7 @@ export function MenuItemForm({
   const [priceRupees, setPriceRupees] = useState("");
   const [description, setDescription] = useState("");
   const [sku, setSku] = useState("");
+  const [dietType, setDietType] = useState<MenuItem["dietType"]>(undefined);
   const [enabled, setEnabled] = useState(true);
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
   const [existingImageUrl, setExistingImageUrl] = useState<string | undefined>(
@@ -124,6 +126,9 @@ export function MenuItemForm({
     setPriceRupees(item ? paiseToRupeeString(item.price) : "");
     setDescription(item?.description ?? "");
     setSku(item?.sku ?? "");
+    // New items default to veg; editing keeps the saved value. Legacy items
+    // without the field start unselected so we never guess wrong.
+    setDietType(item ? item.dietType : "veg");
     setEnabled(item?.enabled ?? true);
     setLocalImageUri(null);
     setExistingImageUrl(item?.imageUrl);
@@ -172,6 +177,7 @@ export function MenuItemForm({
         enabled,
         description: description.trim() || undefined,
         sku: sku.trim() || undefined,
+        dietType,
         // A newly picked photo is already a compressed base64 data URI, so it
         // is saved inside the document like any other field.
         imageUrl: localImageUri ?? existingImageUrl,
@@ -298,6 +304,38 @@ export function MenuItemForm({
               placeholderTextColor={colors.textMuted}
               keyboardType="decimal-pad"
             />
+
+            <Text style={styles.label}>Veg / Non-Veg</Text>
+            <View style={styles.chips}>
+              {(["veg", "non-veg"] as const).map((t) => {
+                const active = dietType === t;
+                const tint = t === "veg" ? colors.statusGreen : colors.statusRed;
+                const soft =
+                  t === "veg" ? colors.statusGreenSoft : colors.statusRedSoft;
+                return (
+                  <Pressable
+                    key={t}
+                    style={({ pressed }) => [
+                      styles.chip,
+                      styles.dietChip,
+                      active && { backgroundColor: soft, borderColor: tint },
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={() => setDietType(t)}
+                  >
+                    <DietBadge type={t} size={14} />
+                    <Text
+                      style={[
+                        styles.chipText,
+                        active && { color: tint, fontWeight: "700" },
+                      ]}
+                    >
+                      {t === "veg" ? "Veg" : "Non-Veg"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
 
             <Text style={styles.label}>Description</Text>
             <TextInput
@@ -478,6 +516,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderStrong,
     backgroundColor: colors.surface,
+  },
+  dietChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.s2,
   },
   chipActive: {
     backgroundColor: colors.primary,

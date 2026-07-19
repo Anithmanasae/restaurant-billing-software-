@@ -146,6 +146,12 @@ export interface MenuItem {
   imageUrl?: string;
   description?: string;
   sku?: string;
+  /**
+   * Veg / non-veg marker chosen by the cashier in Menu Management. Optional
+   * because items created before this field existed have no value — those
+   * render without a badge until edited.
+   */
+  dietType?: "veg" | "non-veg";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

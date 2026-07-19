@@ -8,6 +8,7 @@ import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { formatMoney } from "@/lib/money";
 import { colors, radius, shadow, space } from "@/theme/theme";
+import { DietBadge } from "./DietBadge";
 import type { MenuItemDoc } from "./useMenuData";
 
 interface MenuItemCardProps {
@@ -46,9 +47,12 @@ function MenuItemCardImpl({
       </Pressable>
 
       <View style={styles.body}>
-        <Text style={styles.name} numberOfLines={1}>
-          {item.name}
-        </Text>
+        <View style={styles.nameRow}>
+          <DietBadge type={item.dietType} size={14} />
+          <Text style={styles.name} numberOfLines={1}>
+            {item.name}
+          </Text>
+        </View>
         <Text style={styles.price}>{formatMoney(item.price)}</Text>
         {item.sku ? (
           <Text style={styles.sku} numberOfLines={1}>
@@ -126,7 +130,13 @@ const styles = StyleSheet.create({
     padding: space.s3,
     gap: space.s1,
   },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.s1,
+  },
   name: {
+    flexShrink: 1,
     fontSize: 15,
     fontWeight: "600",
     color: colors.text,

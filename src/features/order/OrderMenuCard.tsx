@@ -12,6 +12,7 @@ import { Image } from "expo-image";
 import { Feather } from "@expo/vector-icons";
 import { formatMoney } from "@/lib/money";
 import { PressableScale } from "@/components/PressableScale";
+import { DietBadge } from "@/features/menu/DietBadge";
 import { resolveMenuImage } from "@/features/menu/menuImages";
 import { colors, fonts, radius, shadow, space } from "@/theme/theme";
 import type { MenuItem } from "@/types/models";
@@ -52,9 +53,12 @@ function OrderMenuCardImpl({
       )}
 
       <View style={styles.body}>
-        <Text style={styles.name} numberOfLines={1}>
-          {item.name}
-        </Text>
+        <View style={styles.nameRow}>
+          <DietBadge type={item.dietType} size={15} />
+          <Text style={styles.name} numberOfLines={1}>
+            {item.name}
+          </Text>
+        </View>
         <View style={styles.priceRow}>
           <Text style={styles.price}>{formatMoney(item.price)}</Text>
 
@@ -118,7 +122,13 @@ const styles = StyleSheet.create({
     padding: space.s3,
     gap: space.s2,
   },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.s1,
+  },
   name: {
+    flexShrink: 1,
     fontFamily: fonts.semibold,
     fontSize: 15,
     color: colors.text,
