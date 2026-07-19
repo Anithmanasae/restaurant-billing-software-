@@ -71,19 +71,24 @@ export function TablesScreen() {
   const { data: orders } = useCollectionData<Order>(ordersQuery);
 
   // Kitchen progress toast: watch every active ticket, but only alert for
-  // tables whose order belongs to this waiter ("T1 — Order READY").
+  // tables whose order belongs to this waiter ("T1 — Order READY"). The query
+  // excludes `completed` (history is unbounded), so a completed ticket shows
+  // up here as a REMOVAL — removedMeansCompleted turns that into the alert.
   const kotsQuery = useMemo(
     () =>
       query(paths.kots(), where("status", "in", ["new", "preparing", "ready"])),
     []
   );
-  const { data: kots } = useCollectionData<Kot>(kotsQuery);
+  const { data: kots, error: kotsError } = useCollectionData<Kot>(kotsQuery);
   const myOrderIds = useMemo(() => {
     const ids = new Set<string>();
     for (const o of orders) if (o.waiterId === waiterId) ids.add(o.id);
     return ids;
   }, [orders, waiterId]);
-  const kotAlert = useKotStatusAlerts(kots, (k) => myOrderIds.has(k.orderId));
+  const kotAlert = useKotStatusAlerts(kots, (k) => myOrderIds.has(k.orderId), {
+    removedMeansCompleted: true,
+    paused: kotsError != null,
+  });
 
   // tableId -> its running order
   const orderByTable = useMemo(() => {

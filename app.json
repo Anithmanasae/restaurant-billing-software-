@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "com.sada.pos",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/brand/adaptive-icon.png",
         "backgroundColor": "#202020"
@@ -36,6 +37,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
       "./plugins/withBluetoothPermissions",
       [
         "expo-image-picker",

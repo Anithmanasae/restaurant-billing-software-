@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "213673160183",
+    "project_id": "sada-billing-software",
+    "storage_bucket": "sada-billing-software.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:213673160183:android:d1972512ca985c8e08d2f2",
+        "android_client_info": {
+          "package_name": "com.sada.pos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJ5OaF05WgpegUcGf9AgWPyHMZBUOGAJU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -22,6 +22,7 @@ import { randomUUID } from "expo-crypto";
 import { db } from "@/lib/firebase";
 import { paths } from "@/lib/firestore/paths";
 import { computeBill } from "@/lib/money";
+import { getCachedPushToken } from "@/lib/push";
 import type {
   Kot,
   KotItem,
@@ -228,6 +229,8 @@ export async function sendKot(
       items: kotItems,
       status: "new",
       printedCount: 0,
+      // This device's push token — the KDS pushes kitchen progress to it.
+      waiterPushToken: getCachedPushToken(),
       createdAt: serverTimestamp() as unknown as Kot["createdAt"],
       updatedAt: serverTimestamp() as unknown as Kot["updatedAt"],
     };

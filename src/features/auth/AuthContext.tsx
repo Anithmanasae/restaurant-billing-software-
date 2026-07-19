@@ -34,6 +34,7 @@ import {
 } from "firebase/auth";
 import { getDoc, onSnapshot } from "firebase/firestore";
 import { auth, RESTAURANT_ID } from "@/lib/firebase";
+import { registerForKotPush } from "@/lib/pushRegistration";
 import { paths, setActiveRestaurantId } from "@/lib/firestore/paths";
 import {
   isSignupInProgress,
@@ -194,6 +195,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const usable =
     rawProfile !== null && rawProfile.status === "approved" && rawProfile.active;
   const profile = usable ? rawProfile : null;
+
+  // Register this device for kitchen-progress pushes once a usable profile
+  // resolves. The kitchen tablet only SENDS pushes (its token is never
+  // stamped on a ticket), so it skips the permission prompt.
+  const pushRole = profile?.role ?? null;
+  useEffect(() => {
+    if (pushRole && pushRole !== "kitchen") void registerForKotPush();
+  }, [pushRole]);
 
   let gate: GateStatus = null;
   if (firebaseUser && !loading && !profile) {

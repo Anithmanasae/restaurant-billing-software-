@@ -216,6 +216,13 @@ export interface Kot {
   items: KotItem[];
   status: KotStatus;
   printedCount: number;
+  /**
+   * Expo push token of the device that fired this ticket (the attending
+   * waiter, or the cashier for counter orders). The KDS pushes kitchen
+   * progress straight to it — no server needed. Null when the sender had
+   * notifications off / unsupported build.
+   */
+  waiterPushToken?: string | null;
   createdAt: Ts;
   updatedAt: Ts;
 }
