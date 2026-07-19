@@ -5,6 +5,11 @@
  * truncates: every round (first + additional) with its ticket number, status
  * pill, fire time, elapsed and reprint, the FULL item list with notes and
  * voided lines, and the same Start / Ready / Completed group actions.
+ *
+ * CASHIER ONLY: each un-voided line on an active ticket also gets a Remove
+ * button — when the kitchen or a waiter asks for an item to come off a fired
+ * order, only the cashier can void it (struck through on the ticket, dropped
+ * from the bill). No other role ever sees the button.
  */
 import { useCallback, useState } from "react";
 import {
@@ -29,8 +34,9 @@ import {
   isPrintingAvailable,
   printToSavedPrinter,
 } from "@/lib/printer/printerService";
+import { useAuth } from "@/features/auth/AuthContext";
 import type { Kot, KotItem, KotStatus } from "@/types/models";
-import { reprintKot } from "./kdsApi";
+import { reprintKot, voidKotItem } from "./kdsApi";
 import { completeGroup, readyGroup, startGroup } from "./groupActions";
 import {
   additionalItemCount,
@@ -102,6 +108,39 @@ export function TicketDetailSheet({
         "Couldn’t update ticket",
         e instanceof Error ? e.message : String(e)
       )
+    );
+  }, []);
+
+  // Remove-item power is the cashier's alone: kitchen/waiter must ask the
+  // cashier to take a line off a fired ticket. (Rules enforce this server-side
+  // too — only a cashier may write `items` on a kot.)
+  const { role } = useAuth();
+  const canRemoveItems = role === "cashier";
+  const [removingLineId, setRemovingLineId] = useState<string | null>(null);
+
+  const onRemoveItem = useCallback((kot: LiveKot, item: KotItem) => {
+    Alert.alert(
+      "Remove item?",
+      `${item.qty}× ${item.name} will be marked VOID on ticket #${kot.ticketNumber} and taken off the bill.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: () => {
+            tapFeedback();
+            setRemovingLineId(item.lineId);
+            voidKotItem(kot, item.lineId)
+              .catch((e) =>
+                Alert.alert(
+                  "Couldn’t remove item",
+                  e instanceof Error ? e.message : String(e)
+                )
+              )
+              .finally(() => setRemovingLineId(null));
+          },
+        },
+      ]
     );
   }, []);
 
@@ -189,6 +228,8 @@ export function TicketDetailSheet({
                 round={round}
                 printing={printingId === t.id}
                 onReprint={onReprint}
+                onRemoveItem={canRemoveItems ? onRemoveItem : undefined}
+                removingLineId={removingLineId}
               />
             ))}
           </ScrollView>
@@ -257,11 +298,16 @@ function RoundSection({
   round,
   printing,
   onReprint,
+  onRemoveItem,
+  removingLineId,
 }: {
   kot: LiveKot;
   round: number;
   printing: boolean;
   onReprint: (kot: LiveKot) => void;
+  /** Present only for the cashier — everyone else never sees Remove. */
+  onRemoveItem?: (kot: LiveKot, item: KotItem) => void;
+  removingLineId: string | null;
 }) {
   const meta = STATUS_META[kot.status];
   const count = itemCount(kot);
@@ -298,13 +344,30 @@ function RoundSection({
         </Pressable>
       </View>
       {kot.items.map((item) => (
-        <ItemLine key={item.lineId} item={item} />
+        <ItemLine
+          key={item.lineId}
+          item={item}
+          removing={removingLineId === item.lineId}
+          onRemove={
+            onRemoveItem && !item.voided && kot.status !== "completed"
+              ? () => onRemoveItem(kot, item)
+              : undefined
+          }
+        />
       ))}
     </View>
   );
 }
 
-function ItemLine({ item }: { item: KotItem }) {
+function ItemLine({
+  item,
+  removing,
+  onRemove,
+}: {
+  item: KotItem;
+  removing: boolean;
+  onRemove?: () => void;
+}) {
   const notes = (item.notes ?? "")
     .split("\n")
     .map((n) => n.trim())
@@ -319,6 +382,21 @@ function ItemLine({ item }: { item: KotItem }) {
           {item.name}
         </Text>
         {item.voided && <Text style={styles.voidTag}>VOID</Text>}
+        {onRemove && (
+          <Pressable
+            hitSlop={8}
+            onPress={onRemove}
+            disabled={removing}
+            style={({ pressed }) => [
+              styles.removeBtn,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.removeText}>
+              {removing ? "Removing…" : "Remove"}
+            </Text>
+          </Pressable>
+        )}
       </View>
       {notes.map((n, i) => (
         <Text key={i} style={[styles.noteLine, item.voided && styles.voided]}>
@@ -468,6 +546,17 @@ const styles = StyleSheet.create({
   },
   voidTag: {
     fontSize: 10,
+    fontWeight: "800",
+    color: colors.danger,
+  },
+  removeBtn: {
+    backgroundColor: colors.statusRedSoft,
+    paddingHorizontal: space.s2,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+  },
+  removeText: {
+    fontSize: 11,
     fontWeight: "800",
     color: colors.danger,
   },

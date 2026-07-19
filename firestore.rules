@@ -300,12 +300,18 @@ service cloud.firestore {
       // ---- KOTs ----------------------------------------------------------
       // Floor staff (waiter/cashier) create tickets. Kitchen and cashier can
       // ONLY advance status/printedCount, never edit items or prices.
+      // Exception: the CASHIER may edit `items` (to VOID a line when the
+      // kitchen/waiter requests a removal after the ticket was fired) — but
+      // can never add or drop lines: the item count must stay the same.
       match /kots/{kotId} {
         allow read: if isActiveStaff();
         allow create: if hasAnyRole(['admin', 'waiter', 'cashier']);
         allow update: if isAdmin()
           || (hasAnyRole(['kitchen', 'cashier'])
               && incomingDiffers(['status', 'printedCount', 'updatedAt']))
+          || (hasRole('cashier')
+              && incomingDiffers(['items', 'updatedAt'])
+              && request.resource.data.items.size() == resource.data.items.size())
           || (hasRole('waiter')
               && incomingDiffers(['printedCount', 'updatedAt']));
         allow delete: if isAdmin();
