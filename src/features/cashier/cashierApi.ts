@@ -8,6 +8,7 @@
  */
 import {
   doc,
+  getDoc,
   getDocs,
   query,
   runTransaction,
@@ -17,6 +18,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { paths } from "@/lib/firestore/paths";
+import { fetchMergedSecondaryIds } from "@/features/tables/tablesApi";
 import { computeBill, type BillLine } from "@/lib/money";
 import { dayKey } from "@/lib/date";
 import type {
@@ -152,6 +154,12 @@ export async function settleBill(
 ): Promise<void> {
   const summaryRef = paths.dailySummary(dayKey());
 
+  // Tables merged into the billed table must be freed together with it,
+  // or they'd stay "occupied" on the floor forever after payment.
+  const mergedIds = order.tableId
+    ? await fetchMergedSecondaryIds(order.tableId)
+    : [];
+
   await runTransaction(db, async (tx) => {
     // ---- reads first (transaction requirement) ----
     const summarySnap = await tx.get(summaryRef);
@@ -209,11 +217,147 @@ export async function settleBill(
       updatedAt: serverTimestamp(),
     });
     if (order.tableId) {
-      tx.update(paths.table(order.tableId), {
-        status: "available",
-        currentOrderId: null,
+      for (const id of [order.tableId, ...mergedIds]) {
+        tx.update(paths.table(id), {
+          status: "available",
+          currentOrderId: null,
+          mergedInto: null,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+  });
+}
+
+/**
+ * Cancel (void) an unpaid bill — the cashier's escape hatch for a stuck bill
+ * (customer walked out, bill raised by mistake). Nothing is deleted: the bill
+ * keeps its sequential number and stays in Firestore as `void` with who/when,
+ * so the audit trail has no gaps. In the same transaction the order is
+ * cancelled and the table freed — the teardown mirror of `settleBill`'s happy
+ * path. Paid bills can never be voided (rules also freeze them).
+ */
+export async function cancelBill(
+  billId: string,
+  cashierUid: string
+): Promise<void> {
+  // Free any tables merged into the billed table along with it (pre-read:
+  // transactions can't run queries). Best-effort — the tx re-reads the bill.
+  const preBill = await getDoc(paths.bill(billId));
+  const preTableId = preBill.exists() ? preBill.data().tableId : null;
+  const mergedIds = preTableId ? await fetchMergedSecondaryIds(preTableId) : [];
+
+  await runTransaction(db, async (tx) => {
+    // ---- reads first (transaction requirement) ----
+    const billSnap = await tx.get(paths.bill(billId));
+    if (!billSnap.exists()) throw new Error("Bill not found.");
+    const bill = billSnap.data();
+    if (bill.status === "paid") {
+      throw new Error(
+        "This bill is already settled — paid bills can't be cancelled."
+      );
+    }
+    if (bill.status === "void") return; // another device cancelled it already
+
+    const orderSnap = await tx.get(paths.order(bill.orderId));
+
+    // ---- writes ----
+    tx.update(paths.bill(billId), {
+      status: "void",
+      voidedBy: cashierUid,
+      voidedAt: serverTimestamp(),
+    });
+    if (orderSnap.exists()) {
+      tx.update(paths.order(bill.orderId), {
+        status: "cancelled",
         updatedAt: serverTimestamp(),
       });
+    }
+    const tableId = orderSnap.exists()
+      ? orderSnap.data().tableId
+      : bill.tableId;
+    if (tableId) {
+      for (const id of [tableId, ...mergedIds]) {
+        tx.update(paths.table(id), {
+          status: "available",
+          currentOrderId: null,
+          mergedInto: null,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+  });
+}
+
+/**
+ * Cancel an abandoned open order — the escape hatch for anything stuck in the
+ * Bills "Preparing…" list. An order lands there whenever it isn't billable
+ * yet, which covers two dead ends with no other way out:
+ *
+ *   - nothing was ever fired: there is no ticket for the kitchen to finish, so
+ *     it can never become "ready to bill";
+ *   - only PART of it was fired: the unsent lines keep it unbillable no matter
+ *     what the kitchen does, so completing the ticket in the KDS doesn't help.
+ *
+ * Counter orders (takeaway/delivery) have no table either, so "close the
+ * table" can't clear them the way it can for dine-in. Hence this cancels
+ * regardless of how far the order got, and clears any still-live ticket off
+ * the kitchen board in the same transaction (KotStatus has no "cancelled" —
+ * "completed" is how a ticket leaves the active board).
+ *
+ * A billed order is refused: use `cancelBill`, which voids the bill and keeps
+ * the audit trail intact.
+ */
+export async function cancelOpenOrder(orderId: string): Promise<void> {
+  // Merged secondaries must be freed with the table (pre-read: transactions
+  // can't run queries). Only relevant for dine-in; harmless otherwise.
+  const preOrder = await getDoc(paths.order(orderId));
+  const preTableId = preOrder.exists() ? preOrder.data().tableId : null;
+  const mergedIds = preTableId ? await fetchMergedSecondaryIds(preTableId) : [];
+
+  await runTransaction(db, async (tx) => {
+    // ---- reads first (transaction requirement) ----
+    const snap = await tx.get(paths.order(orderId));
+    if (!snap.exists()) throw new Error("Order not found.");
+    const order = snap.data();
+    if (order.status !== "open") return; // already billed/closed/cancelled
+    if (order.billId) {
+      throw new Error(
+        "This order already has a bill — open the bill and cancel it instead."
+      );
+    }
+
+    // Every fired line carries its ticket id, so the tickets to retire are
+    // derivable from the order lines.
+    const kotIds = [
+      ...new Set(
+        order.items.map((i) => i.kotId).filter((k): k is string => k !== null)
+      ),
+    ];
+    const kotSnaps = await Promise.all(kotIds.map((id) => tx.get(paths.kot(id))));
+
+    // ---- writes ----
+    tx.update(paths.order(orderId), {
+      status: "cancelled",
+      updatedAt: serverTimestamp(),
+    });
+    for (const ks of kotSnaps) {
+      if (ks.exists() && ks.data().status !== "completed") {
+        tx.update(paths.kot(ks.id), {
+          status: "completed",
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+    if (order.tableId) {
+      for (const id of [order.tableId, ...mergedIds]) {
+        tx.update(paths.table(id), {
+          status: "available",
+          currentOrderId: null,
+          mergedInto: null,
+          updatedAt: serverTimestamp(),
+        });
+      }
     }
   });
 }

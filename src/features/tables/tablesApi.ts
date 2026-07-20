@@ -7,8 +7,11 @@
  */
 import {
   doc,
+  getDocs,
+  query,
   runTransaction,
   serverTimestamp,
+  where,
   writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -68,28 +71,163 @@ export async function openTable(
 
 /**
  * Merge 2+ tables into a primary. Secondary tables get `mergedInto = primaryId`
- * and are cleared (their guests are now served on the primary's order).
+ * and their live orders are CONSOLIDATED onto the primary, so the eventual
+ * bill always carries the primary table's name:
  *
- * Kept intentionally simple: we point the secondaries at the primary and free
- * them; combining order line-items is handled on the order screen.
+ *   - primary has an open order → each secondary's open order folds its lines
+ *     into it (subtotal recomputed) and is cancelled;
+ *   - primary has none → the first secondary order is re-homed to the primary
+ *     (tableId reassigned, like shiftTable), the rest fold into it.
+ *
+ * KOT tickets belonging to moved orders are re-pointed (orderId/tableId/
+ * tableLabel) in the same transaction, so the KDS shows the primary table and
+ * the billing guard still sees every ticket. Tables with a bill awaiting
+ * payment cannot be merged — settle first.
  */
 export async function mergeTables(
   primaryId: string,
   secondaryIds: string[]
 ): Promise<void> {
-  const others = secondaryIds.filter((id) => id !== primaryId);
+  const others = [...new Set(secondaryIds)].filter((id) => id !== primaryId);
   if (others.length === 0) return;
 
-  const batch = writeBatch(db);
-  for (const id of others) {
-    batch.update(paths.table(id), {
-      mergedInto: primaryId,
-      status: "occupied",
-      currentOrderId: null,
-      updatedAt: serverTimestamp(),
-    });
-  }
-  await batch.commit();
+  await runTransaction(db, async (tx) => {
+    // ---- reads (all before any write) ----
+    const primarySnap = await tx.get(paths.table(primaryId));
+    if (!primarySnap.exists()) throw new Error(`Table ${primaryId} not found`);
+    const primary = primarySnap.data();
+    const primaryLabel = primary.label ?? `T${primary.number}`;
+    if (primary.status === "billed") {
+      throw new Error(
+        `${primaryLabel} has a bill awaiting payment — settle it before merging.`
+      );
+    }
+    if (primary.mergedInto) {
+      throw new Error(
+        `${primaryLabel} is already merged into another table — merge from that table instead.`
+      );
+    }
+
+    const secondaries: { id: string; table: Table }[] = [];
+    for (const id of others) {
+      const snap = await tx.get(paths.table(id));
+      if (!snap.exists()) throw new Error(`Table ${id} not found`);
+      const table = snap.data();
+      const label = table.label ?? `T${table.number}`;
+      if (table.status === "billed") {
+        throw new Error(
+          `${label} has a bill awaiting payment — settle it before merging.`
+        );
+      }
+      if (table.mergedInto && table.mergedInto !== primaryId) {
+        throw new Error(`${label} is already merged into another table.`);
+      }
+      secondaries.push({ id, table });
+    }
+
+    // The primary's live order (if any) is the fold target.
+    let targetOrderId: string | null = null;
+    let targetItems: OrderItem[] | null = null;
+    if (primary.currentOrderId) {
+      const oSnap = await tx.get(paths.order(primary.currentOrderId));
+      if (oSnap.exists() && oSnap.data().status === "open") {
+        targetOrderId = primary.currentOrderId;
+        targetItems = oSnap.data().items;
+      }
+    }
+
+    // Secondaries' live orders, to be moved onto the primary.
+    const moving: { orderId: string; order: Order }[] = [];
+    for (const { id, table } of secondaries) {
+      if (!table.currentOrderId) continue;
+      const oSnap = await tx.get(paths.order(table.currentOrderId));
+      if (!oSnap.exists() || oSnap.data().status !== "open") continue;
+      moving.push({ orderId: table.currentOrderId, order: oSnap.data() });
+    }
+
+    // ---- writes ----
+    // Every fired line references its kot doc, so the tickets to re-point are
+    // derivable from the order lines — consistent within this transaction.
+    const kotIdsOf = (order: Order) => [
+      ...new Set(
+        order.items.map((l) => l.kotId).filter((k): k is string => k !== null)
+      ),
+    ];
+
+    let didFold = false;
+    for (const m of moving) {
+      if (targetOrderId === null) {
+        // No order on the primary yet: re-home this one (like shiftTable).
+        targetOrderId = m.orderId;
+        targetItems = m.order.items;
+        tx.update(paths.order(m.orderId), {
+          tableId: primaryId,
+          updatedAt: serverTimestamp(),
+        });
+        for (const kid of kotIdsOf(m.order)) {
+          tx.update(paths.kot(kid), {
+            tableId: primaryId,
+            tableLabel: primaryLabel,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      } else {
+        // Fold: lines move to the target order, the source is cancelled.
+        didFold = true;
+        targetItems = [...(targetItems ?? []), ...m.order.items];
+        tx.update(paths.order(m.orderId), {
+          status: "cancelled",
+          updatedAt: serverTimestamp(),
+        });
+        for (const kid of kotIdsOf(m.order)) {
+          tx.update(paths.kot(kid), {
+            orderId: targetOrderId,
+            tableId: primaryId,
+            tableLabel: primaryLabel,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+    }
+
+    if (didFold && targetOrderId && targetItems) {
+      tx.update(paths.order(targetOrderId), {
+        items: targetItems,
+        subtotal: subtotalOf(targetItems),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    if (moving.length > 0 && targetOrderId) {
+      tx.update(paths.table(primaryId), {
+        status: "occupied",
+        currentOrderId: targetOrderId,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    for (const { id } of secondaries) {
+      tx.update(paths.table(id), {
+        mergedInto: primaryId,
+        status: "occupied",
+        currentOrderId: null,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  });
+}
+
+/**
+ * Ids of tables currently merged into `primaryTableId`. One-shot read used
+ * just before freeing a table (settleBill / closeTable) so its merged
+ * secondaries are released in the same transaction.
+ */
+export async function fetchMergedSecondaryIds(
+  primaryTableId: string
+): Promise<string[]> {
+  const snap = await getDocs(
+    query(paths.tables(), where("mergedInto", "==", primaryTableId))
+  );
+  return snap.docs.map((d) => d.id);
 }
 
 /**
@@ -203,20 +341,67 @@ export async function shiftTable(
   });
 }
 
+/** True when any live line has been fired to the kitchen. */
+export function orderInKitchen(order: Pick<Order, "items">): boolean {
+  return order.items.some(
+    (i) => !i.voided && i.qty > 0 && i.kotStatus !== "pending"
+  );
+}
+
 /**
- * Close a table back to "available" once its order is settled. Clears the
- * current order pointer and any merge link. The order itself is closed
- * elsewhere (cashier module); here we just free the floor slot.
+ * Close a table back to "available". Guarded: once the order has been fired
+ * to the kitchen (or billed), the table stays locked until the cashier
+ * settles the bill — settleBill is what frees it. The guard runs inside the
+ * transaction so a KOT fired moments earlier still blocks the close.
+ *
+ * A draft order (nothing sent to the kitchen yet) is cancelled so the floor
+ * slot can be reused cleanly.
  */
 export async function closeTable(tableId: string): Promise<void> {
-  const batch = writeBatch(db);
-  batch.update(paths.table(tableId), {
-    status: "available",
-    currentOrderId: null,
-    mergedInto: null,
-    updatedAt: serverTimestamp(),
+  // Tables folded into this one must be released together with it.
+  const mergedIds = await fetchMergedSecondaryIds(tableId);
+
+  await runTransaction(db, async (tx) => {
+    const tableSnap = await tx.get(paths.table(tableId));
+    if (!tableSnap.exists()) throw new Error(`Table ${tableId} not found`);
+    const orderId = tableSnap.data().currentOrderId;
+
+    let cancelDraft = false;
+    if (orderId) {
+      const orderSnap = await tx.get(paths.order(orderId));
+      if (orderSnap.exists()) {
+        const order = orderSnap.data();
+        if (order.status === "billed") {
+          throw new Error(
+            "This table's bill is awaiting payment. Settle it at the counter to free the table."
+          );
+        }
+        if (order.status === "open") {
+          if (orderInKitchen(order)) {
+            throw new Error(
+              "The kitchen is preparing this table's order. The table frees up automatically once the bill is settled."
+            );
+          }
+          cancelDraft = true; // nothing fired yet — discard the draft order
+        }
+      }
+    }
+
+    if (cancelDraft && orderId) {
+      tx.update(paths.order(orderId), {
+        status: "cancelled",
+        updatedAt: serverTimestamp(),
+      });
+    }
+    for (const id of [tableId, ...mergedIds]) {
+      tx.update(paths.table(id), {
+        status: "available",
+        currentOrderId: null,
+        mergedInto: null,
+        updatedAt: serverTimestamp(),
+      });
+    }
   });
-  await batch.commit();
 }
 
 /** Default seats for a table the cashier adds from the count setter. */

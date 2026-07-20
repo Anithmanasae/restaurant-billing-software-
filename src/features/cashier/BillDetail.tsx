@@ -5,11 +5,13 @@
  * amount per line, item total below), the money summary (all values from the
  * Bill doc via `formatMoney` — never recomputed here), payment-method tiles,
  * receipt tiles, and the Settle action. Every write goes through the ported
- * `cashierApi` (`settleBill`, `reprintBill`); this screen never touches
- * Firestore or does money math.
+ * `cashierApi` (`settleBill`, `cancelBill`, `reprintBill`); this screen never
+ * touches Firestore or does money math.
  *
  * A paid bill is read-only: totals + "Paid via …" are shown, the settle
- * controls are locked, but a reprint is still allowed.
+ * controls are locked, but a reprint is still allowed. An unpaid bill can be
+ * cancelled (voided) via a confirmed destructive action — the stuck-bill
+ * escape hatch; a void bill is read-only like a paid one.
  */
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -42,7 +44,7 @@ import {
   formatWhatsAppReceipt,
   normalizeIndianMobile,
 } from "@/lib/receiptText";
-import { reprintBill, settleBill } from "./cashierApi";
+import { cancelBill, reprintBill, settleBill } from "./cashierApi";
 import { useBill, useOrder } from "./useCashierData";
 
 const PAYMENT_TILES: { mode: PaymentMode; label: string; icon: string }[] = [
@@ -65,13 +67,15 @@ export function BillDetail({
   const { data: bill, loading: billLoading } = useBill(billId);
   const { data: order } = useOrder(bill?.orderId ?? null);
   const { data: restaurant } = useRestaurantProfile();
-  const { profile: cashierProfile } = useAuth();
+  const { profile: cashierProfile, firebaseUser } = useAuth();
+  const cashierUid = cashierProfile?.uid ?? firebaseUser?.uid ?? "";
 
   const isPaid = bill?.status === "paid";
+  const isVoid = bill?.status === "void";
 
   // Local UI selections (bill.paymentMode is null until settled).
   const [selectedMode, setSelectedMode] = useState<PaymentMode | null>(null);
-  const [busy, setBusy] = useState<null | "settle" | "print">(null);
+  const [busy, setBusy] = useState<null | "settle" | "print" | "cancel">(null);
   const [justPrinted, setJustPrinted] = useState(false);
 
   // WhatsApp send: number-entry dialog state.
@@ -84,8 +88,8 @@ export function BillDetail({
   }, [bill?.paymentMode]);
 
   const canSettle = useMemo(
-    () => !!bill && !!order && !isPaid && !!selectedMode && busy === null,
-    [bill, order, isPaid, selectedMode, busy]
+    () => !!bill && !!order && !isPaid && !isVoid && !!selectedMode && busy === null,
+    [bill, order, isPaid, isVoid, selectedMode, busy]
   );
 
   async function run(kind: NonNullable<typeof busy>, fn: () => Promise<unknown>) {
@@ -107,6 +111,33 @@ export function BillDetail({
       await settleBill(bill, order, selectedMode);
       onClose();
     });
+  }
+
+  /**
+   * Cancel (void) a stuck/mistaken bill. Deliberately heavier than settle:
+   * requires opening this bill and confirming a destructive alert, so it
+   * can't be fat-fingered from the list. `cancelBill` voids the bill (audit
+   * trail kept), cancels the order, and frees the table in one transaction.
+   */
+  function onCancelBill() {
+    if (!bill || isPaid || isVoid || busy) return;
+    tapFeedback();
+    Alert.alert(
+      "Cancel this bill?",
+      `The bill for ${bill.tableLabel} will be cancelled, its order discarded, and the table freed. This cannot be undone.`,
+      [
+        { text: "Keep bill", style: "cancel" },
+        {
+          text: "Cancel bill",
+          style: "destructive",
+          onPress: () =>
+            void run("cancel", async () => {
+              await cancelBill(bill.id, cashierUid);
+              onClose();
+            }),
+        },
+      ]
+    );
   }
 
   /**
@@ -222,7 +253,11 @@ export function BillDetail({
             {bill.billNumber !== undefined
               ? `Bill No ${formatBillNumber(bill.billNumber)} · `
               : ""}
-            {isPaid ? `Paid via ${paymentLabel(bill.paymentMode!)}` : "Open bill"}
+            {isPaid
+              ? `Paid via ${paymentLabel(bill.paymentMode!)}`
+              : isVoid
+                ? "Cancelled"
+                : "Open bill"}
           </Text>
         </View>
         <Pressable
@@ -342,33 +377,55 @@ export function BillDetail({
           </View>
         </View>
 
-        {/* ── Settle / Paid state ─────────────────────────────────────────── */}
+        {/* ── Settle / Paid / Cancelled state ─────────────────────────────── */}
         {isPaid ? (
           <View style={styles.paidBanner}>
             <Text style={styles.paidBannerText}>
               Paid via {paymentLabel(bill.paymentMode!)}
             </Text>
           </View>
+        ) : isVoid ? (
+          <View style={styles.voidBanner}>
+            <Text style={styles.voidBannerText}>Bill cancelled</Text>
+          </View>
         ) : (
-          <Pressable
-            style={({ pressed }) => [
-              styles.settleBtn,
-              !canSettle && styles.settleBtnDisabled,
-              pressed && styles.pressedScale,
-            ]}
-            onPress={onSettle}
-            disabled={!canSettle}
-          >
-            {busy === "settle" ? (
-              <ActivityIndicator color={colors.textInverse} />
-            ) : (
-              <Text style={styles.settleBtnText}>
-                {selectedMode
-                  ? `Settle ${formatMoney(bill.grandTotal)}`
-                  : "Select a payment method"}
-              </Text>
-            )}
-          </Pressable>
+          <>
+            <Pressable
+              style={({ pressed }) => [
+                styles.settleBtn,
+                !canSettle && styles.settleBtnDisabled,
+                pressed && styles.pressedScale,
+              ]}
+              onPress={onSettle}
+              disabled={!canSettle}
+            >
+              {busy === "settle" ? (
+                <ActivityIndicator color={colors.textInverse} />
+              ) : (
+                <Text style={styles.settleBtnText}>
+                  {selectedMode
+                    ? `Settle ${formatMoney(bill.grandTotal)}`
+                    : "Select a payment method"}
+                </Text>
+              )}
+            </Pressable>
+
+            {/* Escape hatch for a stuck/mistaken bill — see onCancelBill. */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.cancelBillBtn,
+                pressed && styles.pressedScale,
+              ]}
+              onPress={onCancelBill}
+              disabled={busy !== null}
+            >
+              {busy === "cancel" ? (
+                <ActivityIndicator color={colors.danger} />
+              ) : (
+                <Text style={styles.cancelBillBtnText}>Cancel bill</Text>
+              )}
+            </Pressable>
+          </>
         )}
       </ScrollView>
 
@@ -552,6 +609,26 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   paidBannerText: { fontSize: 16, fontWeight: "700", color: colors.primaryDark },
+
+  voidBanner: {
+    backgroundColor: colors.statusRedSoft,
+    borderRadius: radius.md,
+    paddingVertical: space.s4,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  voidBannerText: { fontSize: 16, fontWeight: "700", color: colors.danger },
+
+  cancelBillBtn: {
+    borderRadius: radius.md,
+    paddingVertical: space.s3,
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  cancelBillBtnText: { fontSize: 15, fontWeight: "700", color: colors.danger },
 
   waOverlay: {
     flex: 1,

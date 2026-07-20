@@ -257,6 +257,10 @@ export interface Bill {
   requestedBy: string; // waiter uid
   cashierId: string | null;
   printedCount: number;
+  /** Audit trail for cancelled bills — set only when status is "void". The
+   *  bill doc (and its sequential number) is kept, never deleted. */
+  voidedBy?: string;
+  voidedAt?: Ts;
   createdAt: Ts;
   paidAt: Ts;
 }

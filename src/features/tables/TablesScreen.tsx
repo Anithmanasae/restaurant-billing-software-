@@ -35,6 +35,7 @@ import { TableCard } from "./TableCard";
 import {
   closeTable,
   mergeTables,
+  orderInKitchen,
   shiftTable,
   splitTable,
 } from "./tablesApi";
@@ -125,6 +126,20 @@ export function TablesScreen() {
   const [busy, setBusy] = useState(false);
   const selected = selectedId ? tableById.get(selectedId) ?? null : null;
   const selectedOrder = selectedId ? orderByTable.get(selectedId) ?? null : null;
+
+  // Once the order is fired to the kitchen (or billed), the table is locked:
+  // nobody can free it until the cashier settles the bill (settleBill frees
+  // it automatically). closeTable re-checks this in its transaction too.
+  const closeLockReason = useMemo(() => {
+    if (!selectedOrder) return null;
+    if (selectedOrder.status === "billed") {
+      return "Bill awaiting payment — settle it at the counter to free this table.";
+    }
+    if (orderInKitchen(selectedOrder)) {
+      return "Order is in the kitchen — the table frees up once the bill is settled.";
+    }
+    return null;
+  }, [selectedOrder]);
 
   const freeTables = useMemo(
     () =>
@@ -259,6 +274,7 @@ export function TablesScreen() {
               <ActionsSheet
                 table={selected}
                 hasOrder={!!selectedOrder}
+                closeLockReason={closeLockReason}
                 busy={busy}
                 onOpenOrder={() => {
                   const id = selected.id;
@@ -389,6 +405,7 @@ function ActionButton({
 function ActionsSheet({
   table,
   hasOrder,
+  closeLockReason,
   busy,
   onOpenOrder,
   onMerge,
@@ -399,6 +416,7 @@ function ActionsSheet({
 }: {
   table: Table;
   hasOrder: boolean;
+  closeLockReason: string | null;
   busy: boolean;
   onOpenOrder: () => void;
   onMerge: () => void;
@@ -431,8 +449,11 @@ function ActionsSheet({
         label="Close table (free)"
         variant="danger"
         onPress={onClose}
-        disabled={busy}
+        disabled={busy || closeLockReason !== null}
       />
+      {closeLockReason && (
+        <Text style={styles.sheetHint}>🔒 {closeLockReason}</Text>
+      )}
       <ActionButton label="Cancel" onPress={onDismiss} disabled={busy} />
     </View>
   );

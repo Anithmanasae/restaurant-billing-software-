@@ -303,6 +303,9 @@ service cloud.firestore {
       // Exception: the CASHIER may edit `items` (to VOID a line when the
       // kitchen/waiter requests a removal after the ticket was fired) — but
       // can never add or drop lines: the item count must stay the same.
+      // Floor staff may also RE-POINT a ticket (orderId/tableId/tableLabel)
+      // when tables are merged — mergeTables consolidates the orders and the
+      // tickets must follow; items/status/prices stay untouchable.
       match /kots/{kotId} {
         allow read: if isActiveStaff();
         allow create: if hasAnyRole(['admin', 'waiter', 'cashier']);
@@ -313,7 +316,9 @@ service cloud.firestore {
               && incomingDiffers(['items', 'updatedAt'])
               && request.resource.data.items.size() == resource.data.items.size())
           || (hasRole('waiter')
-              && incomingDiffers(['printedCount', 'updatedAt']));
+              && incomingDiffers(['printedCount', 'updatedAt']))
+          || (hasAnyRole(['waiter', 'cashier'])
+              && incomingDiffers(['orderId', 'tableId', 'tableLabel', 'updatedAt']));
         allow delete: if isAdmin();
       }
 
