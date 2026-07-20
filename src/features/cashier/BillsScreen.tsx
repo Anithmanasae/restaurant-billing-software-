@@ -5,8 +5,9 @@
  * in progress (`useActiveBills`), plus open orders split by kitchen progress
  * (`useBillableOrders`): kitchen-done orders under "Ready to bill" (tappable —
  * calls the ported `generateBill`, then opens the resulting bill) and orders
- * the kitchen is still working on under "Preparing…" (greyed out, NOT
- * tappable — food first, pay after). All data is live; every write goes
+ * the kitchen is still working on under "Preparing…" (not billable — food
+ * first, pay after — but cancellable, so an abandoned counter order can't sit
+ * there forever). All data is live; every write goes
  * through `cashierApi` — this screen never touches Firestore or does money
  * math.
  */
@@ -34,7 +35,7 @@ import { colors, radius, shadow, space } from "@/theme/theme";
 import type { Bill, Order, Table } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useSettings } from "@/features/settings/SettingsContext";
-import { generateBill } from "./cashierApi";
+import { cancelOpenOrder, generateBill } from "./cashierApi";
 import {
   useActiveBills,
   useAllTables,
@@ -83,6 +84,7 @@ export function BillsScreen() {
 
   const [selectedBillId, setSelectedBillId] = useState<string | null>(null);
   const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const tableLabelById = useMemo(() => {
     const map = new Map<string, string>();
@@ -136,6 +138,48 @@ export function BillsScreen() {
     } finally {
       setGeneratingId(null);
     }
+  }
+
+  /**
+   * Discard a stuck "Preparing…" order. Confirmed first, and worded to match
+   * how far it actually got: a partly-fired order means food may already be on
+   * the pass, so the cashier is told that before they discard it.
+   */
+  function handleCancelPreparing(order: Order & { id: string }) {
+    if (cancellingId) return;
+    const fired = order.items.some(
+      (i) => !i.voided && i.qty > 0 && i.kotStatus !== "pending"
+    );
+    tapFeedback();
+    Alert.alert(
+      "Discard this order?",
+      fired
+        ? `${orderLabel(order)} (${formatMoney(order.subtotal)}) was partly sent to the kitchen. Discarding clears its ticket off the kitchen board and nothing will be charged. This cannot be undone.`
+        : `${orderLabel(order)} (${formatMoney(order.subtotal)}) never reached the kitchen. Discarding removes it from this list. This cannot be undone.`,
+      [
+        { text: "Keep order", style: "cancel" },
+        {
+          text: "Discard",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              setCancellingId(order.id);
+              try {
+                await cancelOpenOrder(order.id);
+                successFeedback();
+              } catch (e) {
+                Alert.alert(
+                  "Could not discard",
+                  e instanceof Error ? e.message : String(e)
+                );
+              } finally {
+                setCancellingId(null);
+              }
+            })();
+          },
+        },
+      ]
+    );
   }
 
   return (
@@ -201,6 +245,9 @@ export function BillsScreen() {
               order={item.order}
               label={orderLabel(item.order)}
               now={now}
+              busy={cancellingId === item.order.id}
+              disabled={cancellingId !== null}
+              onCancel={() => handleCancelPreparing(item.order)}
             />
           )
         }
@@ -321,17 +368,24 @@ function OrderCard({
   );
 }
 
-/** Kitchen still cooking: visible so the cashier knows the table exists, but
- *  greyed out and not tappable — it cannot be billed until every ticket is
- *  completed (it then moves to "Ready to bill" automatically). */
+/** Kitchen still cooking: visible so the cashier knows the order exists, but
+ *  greyed out and not billable until every ticket is completed (it then moves
+ *  to "Ready to bill" automatically). Discard is the way out for one that will
+ *  never get there — an abandoned counter order, or one only partly fired. */
 function PreparingCard({
   order,
   label,
   now,
+  busy,
+  disabled,
+  onCancel,
 }: {
   order: Order & { id: string };
   label: string;
   now: number;
+  busy: boolean;
+  disabled: boolean;
+  onCancel: () => void;
 }) {
   const createdMs = order.createdAt?.toMillis() ?? null;
   return (
@@ -350,6 +404,21 @@ function PreparingCard({
           <Text style={styles.cardTime}>{timeAgo(createdMs, now)}</Text>
         )}
       </View>
+      <Pressable
+        style={({ pressed }) => [
+          styles.discardBtn,
+          pressed && { opacity: 0.7 },
+        ]}
+        onPress={onCancel}
+        disabled={disabled}
+        hitSlop={8}
+      >
+        {busy ? (
+          <ActivityIndicator size="small" color={colors.danger} />
+        ) : (
+          <Text style={styles.discardBtnText}>Discard order</Text>
+        )}
+      </Pressable>
     </View>
   );
 }
@@ -420,6 +489,18 @@ const styles = StyleSheet.create({
   },
   cardTotal: { fontSize: 18, fontWeight: "700", color: colors.text },
   cardTime: { fontSize: 12, color: colors.textMuted },
+
+  discardBtn: {
+    alignSelf: "flex-start",
+    marginTop: space.s3,
+    paddingVertical: space.s2,
+    paddingHorizontal: space.s3,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  discardBtnText: { fontSize: 13, fontWeight: "700", color: colors.danger },
 
   pill: {
     paddingHorizontal: space.s2,

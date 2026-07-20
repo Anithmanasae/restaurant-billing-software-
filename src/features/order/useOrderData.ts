@@ -58,6 +58,38 @@ export function useOpenOrderForTable(tableId: string | null) {
   };
 }
 
+/**
+ * Every OPEN counter order (takeaway/delivery — no table).
+ *
+ * The order screen keeps a takeaway order's id in local component state, so
+ * when a waiter's session ends the id is gone and the order becomes
+ * unreachable: unlike dine-in there is no table `currentOrderId` to resolve it
+ * from. It then strands in the Bills "Preparing…" list forever, taking any
+ * food already fired with it. This query is the missing anchor — it lets
+ * whoever is at the counter pick an abandoned order back up.
+ *
+ * Bill-less and non-empty only: a billed order belongs to the cashier's flow,
+ * and an order with no live lines is nothing to resume. Requires a composite
+ * index on (tableId, status).
+ */
+export function useOpenCounterOrders() {
+  const q = useMemo(
+    () =>
+      query(
+        paths.orders(),
+        where("tableId", "==", null),
+        where("status", "==", "open")
+      ),
+    []
+  );
+  const state = useCollectionData<Order>(q);
+  const orders = useMemo(
+    () => state.data.filter((o) => !o.billId && o.items.some((i) => !i.voided)),
+    [state.data]
+  );
+  return { ...state, orders };
+}
+
 /** Subscribe to a single order doc by id. */
 export function useOrder(orderId: string | null) {
   const ref = useMemo(

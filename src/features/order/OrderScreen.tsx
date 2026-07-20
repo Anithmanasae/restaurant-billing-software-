@@ -69,6 +69,7 @@ import {
   useKotsForOrder,
   useMenuCategories,
   useMenuItems,
+  useOpenCounterOrders,
   useOpenOrderForTable,
   useOrder,
   useTable,
@@ -121,6 +122,11 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
   // mints and subscribe to it directly.
   const [takeawayOrderId, setTakeawayOrderId] = useState<string | null>(null);
   const takeawayOrderState = useOrder(isDineIn ? null : takeawayOrderId);
+
+  // Counter orders left open by an ended session — offered for resume below,
+  // since nothing else in the app can reach them once their id is lost.
+  const { orders: resumableOrders } = useOpenCounterOrders();
+  const canResume = !isDineIn && takeawayOrderId === null;
 
   const order = isDineIn ? openOrderState.order : takeawayOrderState.data;
   const orderId = order?.id ?? null;
@@ -238,6 +244,17 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
       .finally(() => {
         inflightRef.current -= 1;
       });
+  };
+
+  /**
+   * Pick an abandoned counter order back up. Only the id is needed: the live
+   * subscription re-adopts the order and the mirror effect refills its lines,
+   * so the screen lands in exactly the state the previous session left.
+   */
+  const handleResume = (id: string) => {
+    tapFeedback();
+    mirrorRef.current = null; // let the incoming snapshot seed the lines
+    setTakeawayOrderId(id);
   };
 
   const handleAdd = (item: MenuItemDoc) => {
@@ -394,6 +411,43 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
       <View style={styles.titleBlock}>
         <Text style={styles.title}>New Order</Text>
       </View>
+
+      {/* Counter orders an ended session left behind. Nothing else in the app
+          can reach these, so offer them here rather than stranding them (and
+          any food already fired) in the cashier's "Preparing…" list. */}
+      {canResume && resumableOrders.length > 0 && (
+        <View style={styles.resumeWrap}>
+          <Text style={styles.resumeTitle}>
+            Unfinished counter {resumableOrders.length === 1 ? "order" : "orders"}
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.resumeRow}
+          >
+            {resumableOrders.map((o) => {
+              const count = o.items.filter((i) => !i.voided).length;
+              return (
+                <Pressable
+                  key={o.id}
+                  style={({ pressed }) => [
+                    styles.resumeChip,
+                    pressed && { opacity: 0.7 },
+                  ]}
+                  onPress={() => handleResume(o.id)}
+                >
+                  <Text style={styles.resumeChipAmount}>
+                    {formatMoney(o.subtotal)}
+                  </Text>
+                  <Text style={styles.resumeChipMeta}>
+                    {count} item{count === 1 ? "" : "s"} · Resume
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Search */}
       <View style={styles.searchWrap}>
@@ -653,6 +707,36 @@ const styles = StyleSheet.create({
     fontSize: 28,
     color: colors.text,
     letterSpacing: -0.4,
+  },
+
+  resumeWrap: { paddingBottom: space.s3, gap: space.s2 },
+  resumeTitle: {
+    fontFamily: fonts.semibold,
+    fontSize: 12,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    paddingHorizontal: space.s4,
+  },
+  resumeRow: { paddingHorizontal: space.s4, gap: space.s2 },
+  resumeChip: {
+    paddingVertical: space.s2,
+    paddingHorizontal: space.s3,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  resumeChipAmount: {
+    fontFamily: fonts.bold,
+    fontSize: 15,
+    color: colors.text,
+  },
+  resumeChipMeta: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 1,
   },
   subtitle: {
     fontFamily: fonts.regular,
