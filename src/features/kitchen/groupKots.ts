@@ -52,6 +52,26 @@ export function completedGroups(kots: LiveKot[]): TableGroup[] {
   return out;
 }
 
+/**
+ * Do two groups describe the same board state?
+ *
+ * `groupActiveKots` necessarily rebuilds every TableGroup object on each
+ * snapshot, so card props always have fresh identity even when a card's own
+ * tickets are untouched — which is what stopped `TableTicketCard`'s memo() from
+ * ever bailing out. Comparing ticket objects by IDENTITY is valid because
+ * `useCollectionData` reuses the object for any doc Firestore didn't report as
+ * changed, so an untouched ticket is literally the same object as last snapshot.
+ */
+export function sameGroup(a: TableGroup, b: TableGroup): boolean {
+  return (
+    a.key === b.key &&
+    a.tableLabel === b.tableLabel &&
+    a.completed === b.completed &&
+    a.tickets.length === b.tickets.length &&
+    a.tickets.every((t, i) => t === b.tickets[i])
+  );
+}
+
 /** A table with 2+ active tickets has an "additional" round in play. */
 export function hasAdditionalRound(group: TableGroup): boolean {
   return !group.completed && group.tickets.length > 1;

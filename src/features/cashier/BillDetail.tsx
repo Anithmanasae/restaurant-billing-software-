@@ -29,7 +29,7 @@ import {
 import { formatMoney } from "@/lib/money";
 import { tapFeedback } from "@/lib/feedback";
 import { ReceiptSkeleton } from "@/components/Skeleton";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { colors, fonts, radius, shadow, space, opacity, typography } from "@/theme/theme";
 import type { PaymentMode } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useRestaurantProfile } from "@/features/settings/useRestaurantProfile";
@@ -493,8 +493,8 @@ function Row({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
-  pressed: { opacity: 0.7 },
-  pressedScale: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  pressed: { opacity: opacity.pressed },
+  pressedScale: { opacity: opacity.pressed, transform: [{ scale: 0.98 }] },
   centered: {
     flex: 1,
     alignItems: "center",
@@ -502,7 +502,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     padding: space.s6,
   },
-  loadingText: { marginTop: space.s3, color: colors.textMuted, fontSize: 14 },
+  loadingText: { marginTop: space.s3, color: colors.textMuted, fontFamily: fonts.regular, fontSize: 14 },
 
   topBar: {
     flexDirection: "row",
@@ -515,15 +515,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   topBarText: { flex: 1 },
-  topBarTitle: { fontSize: 20, fontWeight: "700", color: colors.text },
-  topBarSub: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  topBarTitle: { fontSize: 20, fontFamily: fonts.bold, color: colors.text },
+  topBarSub: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted, marginTop: 2 },
   closeBtn: {
     paddingHorizontal: space.s3,
     paddingVertical: space.s2,
     borderRadius: radius.pill,
     backgroundColor: colors.surfaceMuted,
   },
-  closeBtnText: { fontSize: 14, fontWeight: "600", color: colors.text },
+  closeBtnText: { fontSize: 14, fontFamily: fonts.semibold, color: colors.text },
 
   body: { padding: space.s4, paddingBottom: space.s6, gap: space.s4 },
 
@@ -536,11 +536,8 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   cardTitle: {
-    fontSize: 13,
-    fontWeight: "700",
+    ...typography.sectionLabel,
     color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
     marginBottom: space.s3,
   },
 
@@ -550,10 +547,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: space.s2,
   },
-  rowLabel: { fontSize: 15, color: colors.text },
-  rowValue: { fontSize: 15, fontWeight: "600", color: colors.text },
-  itemName: { flex: 1, fontSize: 15, color: colors.text, marginRight: space.s3 },
-  itemQty: { color: colors.textMuted, fontWeight: "600" },
+  rowLabel: { fontFamily: fonts.regular, fontSize: 15, color: colors.text },
+  rowValue: { fontSize: 15, fontFamily: fonts.semibold, color: colors.text },
+  itemName: { flex: 1, fontFamily: fonts.regular, fontSize: 15, color: colors.text, marginRight: space.s3 },
+  itemQty: { color: colors.textMuted, fontFamily: fonts.semibold },
 
   divider: {
     height: 1,
@@ -565,8 +562,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  totalLabel: { fontSize: 17, fontWeight: "700", color: colors.text },
-  totalValue: { fontSize: 20, fontWeight: "800", color: colors.primary },
+  totalLabel: { fontSize: 17, fontFamily: fonts.bold, color: colors.text },
+  totalValue: { fontSize: 20, fontFamily: fonts.extrabold, color: colors.primary },
 
   tileRow: { flexDirection: "row", gap: space.s3 },
   tile: {
@@ -584,11 +581,12 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: colors.primarySoft,
   },
-  tileDisabled: { opacity: 0.5 },
+  tileDisabled: { opacity: opacity.disabled },
+  // Emoji glyph — leave it on the system font.
   tileIcon: { fontSize: 22 },
-  tileLabel: { fontSize: 14, fontWeight: "600", color: colors.text },
+  tileLabel: { fontSize: 14, fontFamily: fonts.semibold, color: colors.text },
   tileLabelActive: { color: colors.primaryDark },
-  tileMeta: { fontSize: 11, color: colors.textMuted },
+  tileMeta: { fontFamily: fonts.regular, fontSize: 11, color: colors.textMuted },
 
   settleBtn: {
     backgroundColor: colors.primary,
@@ -598,7 +596,7 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   settleBtnDisabled: { backgroundColor: colors.borderStrong },
-  settleBtnText: { fontSize: 17, fontWeight: "700", color: colors.textInverse },
+  settleBtnText: { fontSize: 17, fontFamily: fonts.bold, color: colors.textInverse },
 
   paidBanner: {
     backgroundColor: colors.primarySoft,
@@ -608,7 +606,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary,
   },
-  paidBannerText: { fontSize: 16, fontWeight: "700", color: colors.primaryDark },
+  paidBannerText: { fontSize: 16, fontFamily: fonts.bold, color: colors.primaryDark },
 
   voidBanner: {
     backgroundColor: colors.statusRedSoft,
@@ -618,7 +616,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.danger,
   },
-  voidBannerText: { fontSize: 16, fontWeight: "700", color: colors.danger },
+  voidBannerText: { fontSize: 16, fontFamily: fonts.bold, color: colors.danger },
 
   cancelBillBtn: {
     borderRadius: radius.md,
@@ -628,11 +626,11 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
-  cancelBillBtnText: { fontSize: 15, fontWeight: "700", color: colors.danger },
+  cancelBillBtnText: { fontSize: 15, fontFamily: fonts.bold, color: colors.danger },
 
   waOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: colors.scrim,
     justifyContent: "center",
     padding: space.s5,
   },
@@ -643,14 +641,15 @@ const styles = StyleSheet.create({
     gap: space.s3,
     ...shadow.card,
   },
-  waTitle: { fontSize: 17, fontWeight: "700", color: colors.text },
-  waHint: { fontSize: 13, color: colors.textMuted, lineHeight: 18 },
+  waTitle: { fontSize: 17, fontFamily: fonts.bold, color: colors.text },
+  waHint: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted, lineHeight: 18 },
   waInput: {
     borderWidth: 1.5,
     borderColor: colors.border,
     borderRadius: radius.md,
     paddingHorizontal: space.s3,
     paddingVertical: space.s3,
+    fontFamily: fonts.regular,
     fontSize: 16,
     color: colors.text,
     backgroundColor: colors.bg,
@@ -663,11 +662,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   waBtnGhost: { backgroundColor: colors.surfaceMuted },
-  waBtnGhostText: { fontSize: 15, fontWeight: "600", color: colors.text },
+  waBtnGhostText: { fontSize: 15, fontFamily: fonts.semibold, color: colors.text },
   waBtnPrimary: { backgroundColor: colors.primary },
   waBtnPrimaryText: {
     fontSize: 15,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.textInverse,
   },
 });

@@ -14,7 +14,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { colors, fonts, radius, shadow, space, opacity, typography } from "@/theme/theme";
 import {
   saveRestaurantProfile,
   useRestaurantProfile,
@@ -115,17 +115,11 @@ const styles = StyleSheet.create({
     gap: space.s2,
     ...shadow.card,
   },
-  title: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  hint: { fontSize: 13, color: colors.textMuted },
+  title: { ...typography.sectionLabel, color: colors.textMuted },
+  hint: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted },
   label: {
     fontSize: 13,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
     color: colors.text,
     marginTop: space.s2,
   },
@@ -135,6 +129,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingHorizontal: space.s3,
     paddingVertical: space.s3,
+    fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.text,
     backgroundColor: colors.surface,
@@ -147,6 +142,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   saveBtnDisabled: { backgroundColor: colors.borderStrong },
-  saveBtnText: { color: colors.textInverse, fontWeight: "700", fontSize: 15 },
-  pressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  saveBtnText: { color: colors.textInverse, fontFamily: fonts.bold, fontSize: 15 },
+  pressed: { opacity: opacity.pressed, transform: [{ scale: 0.98 }] },
 });

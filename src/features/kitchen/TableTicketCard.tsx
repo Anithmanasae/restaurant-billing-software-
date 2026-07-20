@@ -23,7 +23,7 @@ import { formatTimeIST } from "@/lib/date";
 import { animateNextLayout, tapFeedback } from "@/lib/feedback";
 import { ElapsedTime } from "@/components/ElapsedTime";
 import { completeGroup } from "./groupActions";
-import { hasAdditionalRound, type TableGroup } from "./groupKots";
+import { hasAdditionalRound, sameGroup, type TableGroup } from "./groupKots";
 
 const MAX_ITEM_LINES = 3;
 
@@ -51,8 +51,13 @@ export const TableTicketCard = memo(function TableTicketCard({
   group: TableGroup;
   /** 1-based position in the visible FIFO queue — shown in the edge block. */
   queue: number;
-  /** Tapping the card (outside the button) opens the detail sheet. */
-  onPress: () => void;
+  /**
+   * Tapping the card (outside the button) opens the detail sheet. Takes the
+   * group key rather than closing over it, so the board can hand every card ONE
+   * stable callback — a per-card arrow would be rebuilt on each renderItem call
+   * and defeat the memo() below.
+   */
+  onPress: (key: string) => void;
 }) {
   const additional = hasAdditionalRound(group);
   const accent = group.completed
@@ -89,7 +94,7 @@ export const TableTicketCard = memo(function TableTicketCard({
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => onPress(group.key)}
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
     >
       {/* Queue block — thick status-colored left edge */}
@@ -165,7 +170,15 @@ export const TableTicketCard = memo(function TableTicketCard({
       </View>
     </Pressable>
   );
-});
+},
+// The board hands every card a freshly-built TableGroup on each snapshot (see
+// sameGroup), so the default shallow compare never bails. Compare the group's
+// CONTENTS instead: one ticket changing status now re-renders one card, not
+// the whole board.
+(prev, next) =>
+  prev.queue === next.queue &&
+  prev.onPress === next.onPress &&
+  sameGroup(prev.group, next.group));
 
 const styles = StyleSheet.create({
   card: {

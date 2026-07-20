@@ -4,7 +4,7 @@
  * delta are computed by the ported aggregation helpers in `reportsData.ts`.
  */
 import { StyleSheet, Text, View } from "react-native";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { colors, fonts, radius, shadow, space } from "@/theme/theme";
 import type { Delta } from "./reportsData";
 
 interface KpiCardProps {
@@ -65,11 +65,11 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     color: colors.textMuted,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
   },
   value: {
     fontSize: 22,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.text,
     marginTop: space.s2,
   },
@@ -84,14 +84,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primarySoft,
   },
   pillDown: {
-    backgroundColor: "#fdecec",
+    backgroundColor: colors.statusRedSoft,
   },
   pillNeutral: {
     backgroundColor: colors.surfaceMuted,
   },
   pillText: {
     fontSize: 12,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
   },
   pillTextUp: {
     color: colors.primary,

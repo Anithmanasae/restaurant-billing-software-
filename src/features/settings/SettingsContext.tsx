@@ -11,8 +11,10 @@
  */
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -44,15 +46,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const setGstEnabled = (enabled: boolean) => {
+  const setGstEnabled = useCallback((enabled: boolean) => {
     setGstEnabledState(enabled);
     AsyncStorage.setItem(GST_ENABLED_KEY, String(enabled)).catch((e) =>
       console.warn("[settings] failed to persist:", e)
     );
-  };
+  }, []);
+
+  // Memoized: a fresh object literal here re-renders EVERY consumer in the app
+  // on any provider render, even when gstEnabled never changed.
+  const value = useMemo(
+    () => ({ gstEnabled, setGstEnabled }),
+    [gstEnabled, setGstEnabled]
+  );
 
   return (
-    <SettingsContext.Provider value={{ gstEnabled, setGstEnabled }}>
+    <SettingsContext.Provider value={value}>
       {children}
     </SettingsContext.Provider>
   );

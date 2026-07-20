@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import { randomUUID } from "expo-crypto";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors, radius, space } from "@/theme/theme";
+import { colors, fonts, radius, space } from "@/theme/theme";
 import {
   createMenuCategory,
   deleteMenuCategory,
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: colors.scrim,
     justifyContent: "flex-end",
   },
   sheet: {
@@ -257,9 +257,10 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 18,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.text,
   },
+  // "✕" glyph — leave it on the system font.
   close: {
     fontSize: 18,
     color: colors.textMuted,
@@ -278,6 +279,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     paddingHorizontal: space.s3,
     paddingVertical: space.s3,
+    fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.text,
   },
@@ -290,11 +292,12 @@ const styles = StyleSheet.create({
   },
   addBtnText: {
     color: colors.textInverse,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     fontSize: 15,
   },
   error: {
     color: colors.danger,
+    fontFamily: fonts.regular,
     fontSize: 13,
     paddingHorizontal: space.s4,
   },
@@ -322,6 +325,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   arrow: {
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.primary,
     paddingVertical: 1,
@@ -335,7 +339,7 @@ const styles = StyleSheet.create({
   name: {
     flex: 1,
     fontSize: 15,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
     color: colors.text,
   },
   nameInput: {
@@ -346,15 +350,17 @@ const styles = StyleSheet.create({
     paddingVertical: space.s1,
   },
   editHint: {
+    fontFamily: fonts.regular,
     fontSize: 11,
     color: colors.textMuted,
   },
   delete: {
     color: colors.danger,
     fontSize: 13,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
   },
   empty: {
+    fontFamily: fonts.regular,
     fontSize: 14,
     color: colors.textMuted,
     textAlign: "center",

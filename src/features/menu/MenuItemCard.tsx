@@ -7,8 +7,9 @@ import { memo } from "react";
 import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { formatMoney } from "@/lib/money";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { colors, fonts, radius, shadow, space } from "@/theme/theme";
 import { DietBadge } from "./DietBadge";
+import { useMenuImage } from "./menuImageStore";
 import type { MenuItemDoc } from "./useMenuData";
 
 interface MenuItemCardProps {
@@ -24,16 +25,20 @@ function MenuItemCardImpl({
   onDelete,
   onToggleEnabled,
 }: MenuItemCardProps) {
+  // Same resolver the waiter's grid uses, so management now shows exactly the
+  // photo the waiter sees (previously a seeded item showed 🍽 here but its
+  // bundled photo there).
+  const imageSource = useMenuImage(item);
   return (
     <View style={[styles.card, !item.enabled && styles.cardDisabled]}>
       <Pressable
         onPress={() => onEdit(item)}
         style={({ pressed }) => pressed && styles.pressed}
       >
-        {item.imageUrl ? (
+        {imageSource ? (
           <Image
             style={styles.image}
-            source={{ uri: item.imageUrl }}
+            source={imageSource}
             contentFit="cover"
             transition={150}
             cachePolicy="memory-disk"
@@ -122,6 +127,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  // Emoji glyph — leave it on the system font.
   placeholderIcon: {
     fontSize: 32,
     color: colors.textMuted,
@@ -138,15 +144,16 @@ const styles = StyleSheet.create({
   name: {
     flexShrink: 1,
     fontSize: 15,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
     color: colors.text,
   },
   price: {
     fontSize: 15,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.primary,
   },
   sku: {
+    fontFamily: fonts.regular,
     fontSize: 11,
     color: colors.textMuted,
   },
@@ -160,6 +167,7 @@ const styles = StyleSheet.create({
     gap: space.s2,
   },
   switchLabel: {
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.textMuted,
   },
@@ -172,7 +180,7 @@ const styles = StyleSheet.create({
   },
   actionText: {
     fontSize: 13,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
     color: colors.primary,
   },
   deleteText: {

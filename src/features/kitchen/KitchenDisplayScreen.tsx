@@ -12,7 +12,7 @@
  * tables. Each card shows its 1-based FIFO queue position. Fully real-time
  * via the ported hooks; writes only through kdsApi.
  */
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Pressable,
@@ -21,13 +21,14 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarClearance } from "@/lib/useTabBarClearance";
 import { orderBy, query, Timestamp, where } from "firebase/firestore";
 import { FadeSlideIn } from "@/components/FadeSlideIn";
 import { KdsGridSkeleton } from "@/components/Skeleton";
 import { selectionFeedback } from "@/lib/feedback";
 import { paths } from "@/lib/firestore/paths";
 import { useCollectionData } from "@/lib/firestore/useRealtime";
-import { startOfDayIST } from "@/lib/date";
+import { dayKey, startOfDayIST } from "@/lib/date";
 import { colors, fonts, radius, space } from "@/theme/theme";
 import type { Kot } from "@/types/models";
 import {
@@ -56,6 +57,7 @@ const EMPTY_COPY: Record<Tab, string> = {
 
 export function KitchenDisplayScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarClearance = useTabBarClearance();
   const [tab, setTab] = useState<Tab>("orders");
   const [gridH, setGridH] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -70,7 +72,24 @@ export function KitchenDisplayScreen() {
       ),
     []
   );
-  const dayStart = useMemo(() => Timestamp.fromDate(startOfDayIST()), []);
+  // The kitchen tablet is never restarted — it sits on this screen through
+  // service and overnight. Pinning "today" at mount meant that after midnight
+  // the COMPLETED tab still showed YESTERDAY's tickets, and its query kept
+  // accumulating docs for as long as the tablet stayed on. Re-derive the day
+  // boundary when the date actually rolls over.
+  const [today, setToday] = useState(() => dayKey());
+  useEffect(() => {
+    const id = setInterval(() => {
+      const current = dayKey();
+      setToday((prev) => (prev === current ? prev : current));
+    }, 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const dayStart = useMemo(
+    () => Timestamp.fromDate(startOfDayIST()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the date
+    [today]
+  );
   const completedQuery = useMemo(
     () =>
       query(
@@ -138,6 +157,28 @@ export function KitchenDisplayScreen() {
   const loading = activeState.loading || completedState.loading;
   const error = activeState.error ?? completedState.error;
 
+  // One identity for the whole board — a per-card arrow here is rebuilt on
+  // every renderItem call and defeats TableTicketCard's memo().
+  const handleSelect = useCallback((key: string) => setSelectedKey(key), []);
+
+  // Stable identity: an inline renderItem makes VirtualizedList re-render every
+  // mounted cell on each snapshot, and the KDS re-renders constantly.
+  const renderCard = useCallback(
+    ({ item, index }: { item: GridEntry; index: number }) =>
+      "spacer" in item ? (
+        <View style={styles.cell} />
+      ) : (
+        <View style={[styles.cell, { height: cardH }]}>
+          <TableTicketCard
+            group={item}
+            queue={index + 1}
+            onPress={handleSelect}
+          />
+        </View>
+      ),
+    [cardH, handleSelect]
+  );
+
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       {/* App header */}
@@ -200,22 +241,16 @@ export function KitchenDisplayScreen() {
               columnWrapperStyle={styles.gridRow}
               contentContainerStyle={{
                 flexGrow: 1, // lets the empty state center itself
-                paddingBottom: insets.bottom + space.s4,
+                paddingBottom: tabBarClearance + space.s4,
               }}
               showsVerticalScrollIndicator={false}
-              renderItem={({ item, index }) =>
-                "spacer" in item ? (
-                  <View style={styles.cell} />
-                ) : (
-                  <View style={[styles.cell, { height: cardH }]}>
-                    <TableTicketCard
-                      group={item}
-                      queue={index + 1}
-                      onPress={() => setSelectedKey(item.key)}
-                    />
-                  </View>
-                )
-              }
+              renderItem={renderCard}
+              // The board is sized to show 3 rows; mounting far beyond that is
+              // wasted work on a tablet that re-renders on every ticket change.
+              initialNumToRender={COLS * ROWS}
+              maxToRenderPerBatch={COLS}
+              windowSize={5}
+              removeClippedSubviews
               ListEmptyComponent={
                 <View style={styles.center}>
                   <Text style={styles.emptyText}>Nothing here.</Text>

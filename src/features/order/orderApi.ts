@@ -261,35 +261,10 @@ export async function fetchKot(kotId: string): Promise<Kot | null> {
   return snap.exists() ? { ...snap.data(), id: snap.id } : null;
 }
 
-/**
- * Reflect KDS progress back onto order lines. When a KOT's status changes in
- * the kitchen we mirror it onto every line that was sent on that ticket. Kept
- * as a batch so all line updates land together.
- *
- * `kotStatuses` maps kotId -> the per-line status to stamp (pending/sent/
- * preparing/ready/served). Returns true if the order doc was changed.
- */
-export async function syncLineStatuses(
-  orderId: string,
-  kotStatuses: Map<string, OrderItem["kotStatus"]>
-): Promise<boolean> {
-  return runTransaction(db, async (tx) => {
-    const snap = await tx.get(paths.order(orderId));
-    if (!snap.exists()) return false;
-
-    let changed = false;
-    const items = snap.data().items.map((l) => {
-      if (!l.kotId) return l;
-      const next = kotStatuses.get(l.kotId);
-      if (next && next !== l.kotStatus) {
-        changed = true;
-        return { ...l, kotStatus: next };
-      }
-      return l;
-    });
-
-    if (!changed) return false;
-    tx.update(paths.order(orderId), { items, updatedAt: serverTimestamp() });
-    return true;
-  });
-}
+// NOTE: `syncLineStatuses` used to live here — it mirrored each KOT's kitchen
+// status back onto the order's line items via a transaction, on every kot
+// snapshot. It was removed: no remote consumer ever read those values (every
+// other reader of `kotStatus` only tests it against "pending", which `sendKot`
+// writes directly), and the only display that wanted them — the waiter's
+// Current Order sheet — already subscribes to the order's kots and now derives
+// the labels in memory. See `lineStatusByKot` in OrderScreen.

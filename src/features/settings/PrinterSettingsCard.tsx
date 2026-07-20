@@ -14,7 +14,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { colors, fonts, radius, shadow, space, opacity, typography } from "@/theme/theme";
 import { encodeTestTicket, type PaperWidth } from "@/lib/printer/escpos";
 import {
   disconnectPrinter,
@@ -218,17 +218,11 @@ const styles = StyleSheet.create({
     gap: space.s2,
     ...shadow.card,
   },
-  title: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  hint: { fontSize: 13, color: colors.textMuted },
+  title: { ...typography.sectionLabel, color: colors.textMuted },
+  hint: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted },
   label: {
     fontSize: 13,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
     color: colors.text,
     marginTop: space.s2,
   },
@@ -247,7 +241,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: colors.primarySoft,
   },
-  segmentText: { fontSize: 14, fontWeight: "600", color: colors.text },
+  segmentText: { fontSize: 14, fontFamily: fonts.semibold, color: colors.text },
   segmentTextActive: { color: colors.primaryDark },
 
   deviceRow: {
@@ -266,9 +260,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primarySoft,
   },
   deviceText: { flex: 1 },
-  deviceName: { fontSize: 15, fontWeight: "600", color: colors.text },
-  deviceAddress: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  deviceCheck: { fontSize: 16, fontWeight: "700", color: colors.primaryDark },
+  deviceName: { fontSize: 15, fontFamily: fonts.semibold, color: colors.text },
+  deviceAddress: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  // "✓" glyph — leave it on the system font.
+  deviceCheck: { fontSize: 16, color: colors.primaryDark },
 
   btnRow: { flexDirection: "row", gap: space.s3, marginTop: space.s2 },
   btn: {
@@ -279,13 +274,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   btnPrimary: { backgroundColor: colors.primary },
-  btnPrimaryText: { color: colors.textInverse, fontWeight: "700", fontSize: 14 },
+  btnPrimaryText: { color: colors.textInverse, fontFamily: fonts.bold, fontSize: 14 },
   btnSecondary: {
     borderWidth: 1.5,
     borderColor: colors.primary,
     backgroundColor: colors.surface,
   },
-  btnSecondaryText: { color: colors.primary, fontWeight: "700", fontSize: 14 },
+  btnSecondaryText: { color: colors.primary, fontFamily: fonts.bold, fontSize: 14 },
   btnDisabled: { backgroundColor: colors.borderStrong },
-  pressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  pressed: { opacity: opacity.pressed, transform: [{ scale: 0.98 }] },
 });

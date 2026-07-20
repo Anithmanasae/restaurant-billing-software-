@@ -4,7 +4,7 @@
  */
 import { Component, type ReactNode } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { colors, radius, space } from "@/theme/theme";
+import { colors, fonts, radius, space } from "@/theme/theme";
 
 interface Props {
   children: ReactNode;
@@ -60,15 +60,20 @@ const styles = StyleSheet.create({
     padding: space.s6,
     gap: space.s3,
   },
+  // No fontFamily: the brand face has no emoji glyphs, so let the system font
+  // render this one.
   emoji: { fontSize: 40 },
-  title: { fontSize: 20, fontWeight: "700", color: colors.text },
+  title: { fontFamily: fonts.bold, fontSize: 20, color: colors.text },
   message: {
+    fontFamily: fonts.regular,
+    fontSize: 15,
     textAlign: "center",
     color: colors.textMuted,
     lineHeight: 20,
   },
   detail: {
     marginTop: space.s2,
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.danger,
     textAlign: "center",
@@ -80,5 +85,5 @@ const styles = StyleSheet.create({
     paddingVertical: space.s3,
     paddingHorizontal: space.s6,
   },
-  buttonText: { color: colors.textInverse, fontWeight: "700", fontSize: 16 },
+  buttonText: { color: colors.textInverse, fontFamily: fonts.bold, fontSize: 16 },
 });

@@ -3,7 +3,7 @@ import { Redirect } from "expo-router";
 import { useAuth } from "@/features/auth/AuthContext";
 import { homePathForRole } from "@/features/auth/roleRoutes";
 import { Loading } from "@/components/Loading";
-import { colors, space, radius, shadow } from "@/theme/theme";
+import { colors, fonts, space, radius, shadow, typography, opacity } from "@/theme/theme";
 
 /**
  * Gate screen for signed-in accounts that can't use the app yet (or anymore).
@@ -74,9 +74,10 @@ const styles = StyleSheet.create({
     gap: space.s3,
     ...shadow.card,
   },
-  icon: { fontSize: 48 },
-  title: { fontSize: 22, fontWeight: "800", color: colors.text },
+  icon: { fontFamily: fonts.regular, fontSize: 48 },
+  title: { ...typography.screenTitle, color: colors.text },
   body: {
+    fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.textMuted,
     textAlign: "center",
@@ -90,6 +91,6 @@ const styles = StyleSheet.create({
     paddingVertical: space.s3,
     paddingHorizontal: space.s6,
   },
-  signOutText: { color: colors.danger, fontWeight: "700", fontSize: 15 },
-  pressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  signOutText: { color: colors.danger, fontFamily: fonts.bold, fontSize: 15 },
+  pressed: { opacity: opacity.pressed, transform: [{ scale: 0.98 }] },
 });

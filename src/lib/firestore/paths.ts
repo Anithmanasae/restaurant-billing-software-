@@ -25,6 +25,7 @@ import type {
   Kot,
   MenuCategory,
   MenuItem,
+  MenuItemImage,
   Order,
   RestaurantCodeEntry,
   RestaurantProfile,
@@ -97,6 +98,10 @@ export const paths = {
 
   menuItems: () => col<MenuItem>("menuItems"),
   menuItem: (id: string) => ref<MenuItem>("menuItems", id),
+
+  /** Menu photos, split out of the item docs so lists stay small. Same id as
+   *  the item. Read one-shot and lazily — never subscribed. */
+  menuItemImage: (id: string) => ref<MenuItemImage>("menuItemImages", id),
 
   orders: () => col<Order>("orders"),
   order: (id: string) => ref<Order>("orders", id),

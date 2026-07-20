@@ -16,10 +16,11 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarClearance } from "@/lib/useTabBarClearance";
 import { FadeSlideIn } from "@/components/FadeSlideIn";
 import { InsightsSkeleton } from "@/components/Skeleton";
 import { selectionFeedback } from "@/lib/feedback";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { colors, fonts, radius, shadow, space, typography } from "@/theme/theme";
 import { formatMoney } from "@/lib/money";
 import type { OrderType, PaymentMode } from "@/types/models";
 import {
@@ -69,6 +70,7 @@ function prettyDay(dayKey: string): string {
 
 export function InsightsScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarClearance = useTabBarClearance();
   const [tab, setTab] = useState<Tab>("analytics");
   const [rangeKind, setRangeKind] = useState<RangeKind>("week");
   const [showAllItems, setShowAllItems] = useState(false);
@@ -190,7 +192,7 @@ export function InsightsScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: insets.bottom + space.s6 },
+            { paddingBottom: tabBarClearance + space.s6 },
           ]}
           showsVerticalScrollIndicator={false}
         >
@@ -409,12 +411,9 @@ const styles = StyleSheet.create({
     paddingTop: space.s3,
     paddingBottom: space.s2,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: colors.text,
-  },
+  title: { ...typography.screenTitle, color: colors.text },
   subtitle: {
+    fontFamily: fonts.regular,
     fontSize: 13,
     color: colors.textMuted,
     marginTop: 2,
@@ -438,7 +437,7 @@ const styles = StyleSheet.create({
   },
   segmentText: {
     fontSize: 14,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
     color: colors.textMuted,
   },
   segmentTextActive: {
@@ -451,6 +450,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.s4,
     paddingVertical: space.s3,
   },
+  // Emoji glyph — leave it on the system font.
   rangeIcon: {
     fontSize: 16,
   },
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
   },
   rangeChipText: {
     fontSize: 13,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
     color: colors.text,
   },
   rangeChipTextActive: {
@@ -486,6 +486,7 @@ const styles = StyleSheet.create({
     paddingVertical: space.s6,
   },
   errorText: {
+    fontFamily: fonts.regular,
     fontSize: 14,
     color: colors.danger,
     textAlign: "center",
@@ -504,10 +505,11 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     fontSize: 16,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.text,
   },
   cardCaption: {
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.textMuted,
     marginTop: 2,
@@ -521,10 +523,11 @@ const styles = StyleSheet.create({
   },
   link: {
     fontSize: 13,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.primary,
   },
   emptyText: {
+    fontFamily: fonts.regular,
     fontSize: 14,
     color: colors.textMuted,
     paddingVertical: space.s3,
@@ -547,17 +550,18 @@ const styles = StyleSheet.create({
   },
   rankText: {
     fontSize: 12,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.primary,
   },
   itemName: {
     flex: 1,
+    fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.text,
   },
   itemQty: {
     fontSize: 14,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.textMuted,
   },
   sourceRow: {
@@ -569,16 +573,18 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   sourceIcon: {
+    fontFamily: fonts.regular,
     fontSize: 20,
   },
   sourceLabel: {
     flex: 1,
+    fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.text,
   },
   sourceValue: {
     fontSize: 15,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.text,
   },
   summaryGrid: {
@@ -593,11 +599,11 @@ const styles = StyleSheet.create({
   summaryLabel: {
     fontSize: 12,
     color: colors.textMuted,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
   },
   summaryValue: {
     fontSize: 18,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.text,
     marginTop: 2,
   },
@@ -610,7 +616,7 @@ const styles = StyleSheet.create({
   },
   th: {
     fontSize: 12,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.textMuted,
     textTransform: "uppercase",
   },
@@ -621,6 +627,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   td: {
+    fontFamily: fonts.regular,
     fontSize: 14,
     color: colors.text,
   },

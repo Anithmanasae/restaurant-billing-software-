@@ -1,12 +1,12 @@
 /**
  * Bundled fallback photos for the seeded menu items, keyed by menu-item id.
  *
- * The seeded Firestore docs carry no `imageUrl`, so the order/menu cards would
+ * The seeded Firestore docs carry no photo, so the order/menu cards would
  * otherwise show the empty placeholder. These locally-bundled JPEGs (sourced
  * from Wikimedia Commons, one matching photo per dish) give every seeded item a
  * real image without a network round-trip. A card should always prefer the
- * item's own uploaded `imageUrl` and only fall back to this map — see
- * `resolveMenuImage`.
+ * item's own uploaded photo and only fall back to this map — that ordering
+ * lives in `useMenuImage` (menuImageStore.ts).
  *
  * `require` returns a static asset module id (a number), which is exactly what
  * expo-image accepts as a bundled `source`.
@@ -32,13 +32,15 @@ const MENU_IMAGES: Record<string, ImageSourcePropType> = {
 };
 
 /**
- * The image source for a menu item: its uploaded photo if it has one, else the
- * bundled fallback for that id, else `undefined` (caller shows a placeholder).
+ * The bundled seed photo for an item id, if one exists.
+ *
+ * `require` hands back a stable module id, so this is safe to call during
+ * render — unlike a fresh `{ uri }` object, which expo-image would treat as a
+ * new image and re-decode every time.
+ *
+ * Uploaded photos do NOT come from here: they live in `menuItemImages/{id}`
+ * and are resolved by `useMenuImage` in menuImageStore.ts.
  */
-export function resolveMenuImage(
-  id: string,
-  imageUrl?: string
-): ImageSourcePropType | undefined {
-  if (imageUrl) return { uri: imageUrl };
+export function bundledMenuImage(id: string): ImageSourcePropType | undefined {
   return MENU_IMAGES[id];
 }

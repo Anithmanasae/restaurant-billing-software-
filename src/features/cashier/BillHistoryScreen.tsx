@@ -17,10 +17,11 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarClearance } from "@/lib/useTabBarClearance";
 import { router } from "expo-router";
 import { formatMoney } from "@/lib/money";
 import { dayKey, formatTimeIST } from "@/lib/date";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { colors, fonts, radius, shadow, space, typography, opacity } from "@/theme/theme";
 import type { Bill, PaymentMode } from "@/types/models";
 import { BillDetail } from "./BillDetail";
 import { usePaidBills } from "./useCashierData";
@@ -46,6 +47,7 @@ function dayLabel(key: string): string {
 
 export function BillHistoryScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarClearance = useTabBarClearance();
   const { data: bills, loading } = usePaidBills();
   const [selectedBillId, setSelectedBillId] = useState<string | null>(null);
 
@@ -88,7 +90,7 @@ export function BillHistoryScreen() {
         stickySectionHeadersEnabled={false}
         contentContainerStyle={[
           styles.list,
-          { paddingBottom: insets.bottom + space.s6 },
+          { paddingBottom: tabBarClearance + space.s6 },
         ]}
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
@@ -152,7 +154,7 @@ export function BillHistoryScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
-  pressed: { opacity: 0.7 },
+  pressed: { opacity: opacity.pressed },
 
   header: {
     flexDirection: "row",
@@ -169,10 +171,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  backBtnText: { fontSize: 14, fontWeight: "600", color: colors.text },
+  backBtnText: { fontSize: 14, fontFamily: fonts.semibold, color: colors.text },
   headerText: { flex: 1 },
-  title: { fontSize: 22, fontWeight: "800", color: colors.text },
-  subtitle: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  title: { ...typography.screenTitle, color: colors.text },
+  subtitle: { ...typography.screenSubtitle, color: colors.textMuted, marginTop: 2 },
 
   list: { paddingHorizontal: space.s4, gap: space.s3 },
   sectionHeader: {
@@ -182,13 +184,10 @@ const styles = StyleSheet.create({
     marginTop: space.s3,
   },
   sectionTitle: {
-    fontSize: 13,
-    fontWeight: "700",
+    ...typography.sectionLabel,
     color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
   },
-  sectionTotal: { fontSize: 13, fontWeight: "700", color: colors.textMuted },
+  sectionTotal: { fontSize: 13, fontFamily: fonts.bold, color: colors.textMuted },
 
   card: {
     backgroundColor: colors.surface,
@@ -205,19 +204,20 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  cardTitleText: { fontSize: 16, fontWeight: "700", color: colors.text },
-  cardTotal: { fontSize: 16, fontWeight: "800", color: colors.primary },
+  cardTitleText: { fontSize: 16, fontFamily: fonts.bold, color: colors.text },
+  cardTotal: { fontSize: 16, fontFamily: fonts.extrabold, color: colors.primary },
   cardBottom: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  cardMeta: { fontSize: 13, color: colors.textMuted },
+  cardMeta: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted },
 
   empty: {
     textAlign: "center",
     color: colors.textMuted,
     marginTop: space.s6,
+    fontFamily: fonts.regular,
     fontSize: 14,
   },
 });

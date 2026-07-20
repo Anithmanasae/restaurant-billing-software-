@@ -4,7 +4,7 @@
  */
 import { View, Text, Pressable, StyleSheet } from "react-native";
 import { useAuth } from "@/features/auth/AuthContext";
-import { colors, space, radius } from "@/theme/theme";
+import { colors, fonts, space, radius, typography } from "@/theme/theme";
 
 export function ScreenPlaceholder({ title }: { title: string }) {
   const { profile, signOut } = useAuth();
@@ -24,8 +24,8 @@ export function ScreenPlaceholder({ title }: { title: string }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg, padding: space.s6, gap: space.s4 },
-  title: { fontSize: 26, fontWeight: "700", color: colors.primary },
-  sub: { color: colors.textMuted, lineHeight: 20 },
+  title: { ...typography.screenTitle, color: colors.text },
+  sub: { ...typography.screenSubtitle, color: colors.textMuted, lineHeight: 20 },
   btn: {
     alignSelf: "flex-start",
     marginTop: space.s4,
@@ -36,5 +36,5 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
-  btnText: { color: colors.text, fontWeight: "600" },
+  btnText: { color: colors.text, fontFamily: fonts.semibold },
 });

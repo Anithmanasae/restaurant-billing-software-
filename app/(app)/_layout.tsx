@@ -1,24 +1,72 @@
+import { useEffect, useRef } from "react";
 import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet } from "react-native";
+import { Animated, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 import { useAuth } from "@/features/auth/AuthContext";
 import { selectionFeedback } from "@/lib/feedback";
 import { ROLE_ACCESS } from "@/features/auth/roleRoutes";
 import { Loading } from "@/components/Loading";
-import { colors, fonts } from "@/theme/theme";
+import { colors, fonts, radius } from "@/theme/theme";
 
 type IconName = keyof typeof Ionicons.glyphMap;
+
+/** Bar height above the safe-area inset — icon pill + label + breathing room. */
+const BAR_HEIGHT = 62;
+
+/**
+ * Icon in a soft navy pill that grows in when the tab is selected.
+ *
+ * A colour swap alone is a weak "you are here" signal at a glance — the pill
+ * gives the active tab a shape, the way Material and most POS apps mark it, and
+ * doubles as the touch target's visual centre.
+ */
+function TabIcon({
+  name,
+  color,
+  focused,
+}: {
+  name: IconName;
+  color: string;
+  focused: boolean;
+}) {
+  // Native-driven so the pill keeps up with the tab's own shift animation.
+  const t = useRef(new Animated.Value(focused ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.spring(t, {
+      toValue: focused ? 1 : 0,
+      useNativeDriver: true,
+      speed: 18,
+      bounciness: 4,
+    }).start();
+  }, [focused, t]);
+
+  return (
+    <View style={styles.iconSlot}>
+      <Animated.View
+        style={[
+          styles.pill,
+          {
+            opacity: t,
+            transform: [{ scaleX: t.interpolate({ inputRange: [0, 1], outputRange: [0.55, 1] }) }],
+          },
+        ]}
+      />
+      <Ionicons
+        name={focused ? name : (`${name}-outline` as IconName)}
+        size={22}
+        color={color}
+      />
+    </View>
+  );
+}
 
 // Outline glyph when inactive, filled (brand-tinted) when active.
 const icon =
   (name: IconName) =>
-  ({ color, size, focused }: { color: string; size: number; focused: boolean }) => (
-    <Ionicons
-      name={focused ? name : (`${name}-outline` as IconName)}
-      size={size}
-      color={color}
-    />
+  ({ color, focused }: { color: string; focused: boolean }) => (
+    <TabIcon name={name} color={color} focused={focused} />
   );
 
 /**
@@ -28,6 +76,7 @@ const icon =
  */
 export default function AppLayout() {
   const { profile, gate, loading } = useAuth();
+  const insets = useSafeAreaInsets();
   if (loading) return <Loading />;
   // Restricted/removed mid-shift → the live profile listener lands here and
   // kicks the device out to the gate screen instantly.
@@ -52,12 +101,18 @@ export default function AppLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
         // Frosted glass: drop the hard top hairline and let a blur panel sit
-        // behind the (transparent) bar.
+        // behind the (transparent) bar. Height is set explicitly (pill + label
+        // need more room than the 49pt default), so the safe-area inset has to
+        // be added by hand — the navigator only does that for its own default.
         tabBarStyle: {
+          height: BAR_HEIGHT + insets.bottom,
+          paddingTop: 8,
+          paddingBottom: insets.bottom,
           backgroundColor: "transparent",
           borderTopWidth: 0,
           elevation: 0,
         },
+        tabBarItemStyle: { paddingHorizontal: 2 },
         tabBarBackground: () => (
           <BlurView
             tint="light"
@@ -65,7 +120,15 @@ export default function AppLayout() {
             style={[StyleSheet.absoluteFill, styles.tabBlur]}
           />
         ),
-        tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 10 },
+        // 9.5pt medium: with seven tabs on a small phone, "Insights"/"Account"
+        // were being clipped at 10pt semibold. Weight now comes from the icon
+        // pill instead, so the labels can stay quiet.
+        tabBarLabelStyle: {
+          fontFamily: fonts.medium,
+          fontSize: 9.5,
+          letterSpacing: 0.1,
+          marginTop: 3,
+        },
       }}
     >
       <Tabs.Screen
@@ -136,6 +199,23 @@ export default function AppLayout() {
 }
 
 const styles = StyleSheet.create({
-  // Translucent wash over the blur so labels/icons stay legible.
-  tabBlur: { backgroundColor: "rgba(255,255,255,0.72)" },
+  // Translucent wash over the blur so labels/icons stay legible, plus a hairline
+  // that separates the bar from scrolling content without reading as a border.
+  tabBlur: {
+    backgroundColor: "rgba(255,255,255,0.72)",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(0,0,0,0.07)",
+  },
+  // Fixed box so the pill can sit behind the glyph without shifting the label.
+  iconSlot: {
+    width: 52,
+    height: 30,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.pill,
+  },
 });

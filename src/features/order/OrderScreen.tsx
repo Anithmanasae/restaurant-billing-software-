@@ -13,10 +13,11 @@
  *     we remember for subsequent reads/writes.
  *   - Adding fires `pending` lines; "Send KOT" batches them into a new ticket
  *     and flips them to `sent`. Adding more later + Send KOT again = a 2nd
- *     ticket with only the new lines. KDS progress mirrors back onto each line's
- *     `kotStatus` via `syncLineStatuses`.
+ *     ticket with only the new lines. Live KDS progress ("Preparing"/"Ready")
+ *     is DERIVED from this screen's own kot subscription — see
+ *     `lineStatusByKot` — never written back onto the order.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   FlatList,
@@ -29,6 +30,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarClearance } from "@/lib/useTabBarClearance";
 import { Feather } from "@expo/vector-icons";
 import { formatMoney } from "@/lib/money";
 import {
@@ -40,7 +42,7 @@ import {
 } from "@/lib/feedback";
 import { FadeSlideIn } from "@/components/FadeSlideIn";
 import { MenuGridSkeleton } from "@/components/Skeleton";
-import { colors, fonts, radius, shadow, space } from "@/theme/theme";
+import { colors, fonts, radius, shadow, space, typography } from "@/theme/theme";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useSettings } from "@/features/settings/SettingsContext";
 import { useRestaurantProfile } from "@/features/settings/useRestaurantProfile";
@@ -62,7 +64,6 @@ import {
   sendKot,
   setLineNotesInLines,
   setLineQtyInLines,
-  syncLineStatuses,
   writeOrderItems,
 } from "./orderApi";
 import {
@@ -80,6 +81,11 @@ import { KotAlertBanner, useKotStatusAlerts } from "./kotAlerts";
 
 const ALL = "__all__";
 const SPACER = "__spacer__";
+
+/** How long rapid line edits are coalesced before one write is issued. Long
+ *  enough to fold a burst of stepper taps, short enough that an idle order is
+ *  durable almost immediately. Always flushed before Send KOT / billing. */
+const WRITE_COALESCE_MS = 300;
 
 type MenuItemDoc = MenuItem & { id: string };
 type GridEntry = MenuItemDoc | { id: typeof SPACER };
@@ -100,6 +106,7 @@ function kotToLineStatus(status: KotStatus): KotItemStatus {
 
 export function OrderScreen({ tableId }: { tableId?: string }) {
   const insets = useSafeAreaInsets();
+  const tabBarClearance = useTabBarClearance();
   const { profile, role } = useAuth();
   const { gstEnabled } = useSettings();
   const { data: restaurant } = useRestaurantProfile();
@@ -136,15 +143,25 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
       (tableState.data ? `T${tableState.data.number}` : tableId ?? "Table")
     : "Takeaway";
 
-  // Mirror KDS progress back onto the order lines. syncLineStatuses no-ops when
-  // nothing changed, so this settles instead of looping.
   const kotsState = useKotsForOrder(orderId);
-  useEffect(() => {
-    if (!orderId || kotsState.data.length === 0) return;
+
+  /**
+   * kotId -> the line status that ticket implies ("preparing"/"ready"/…).
+   *
+   * This used to be PERSISTED: an effect ran `syncLineStatuses` — a full
+   * runTransaction rewriting the whole `items` array — on every kot snapshot,
+   * on the waiter's hot path, from every device watching the order. Nothing
+   * remote ever read the result: every other consumer of `kotStatus`
+   * (cashierApi, useCashierData, tablesApi, BillsScreen) only tests it against
+   * "pending", which `sendKot` writes directly. The live labels below are the
+   * only reader, and this screen already holds the kot subscription they come
+   * from — so it is derived in memory instead.
+   */
+  const lineStatusByKot = useMemo(() => {
     const map = new Map<string, KotItemStatus>();
     for (const k of kotsState.data) map.set(k.id, kotToLineStatus(k.status));
-    syncLineStatuses(orderId, map).catch(() => {});
-  }, [orderId, kotsState.data]);
+    return map;
+  }, [kotsState.data]);
 
   // Kitchen progress toast — every kot here already belongs to this order.
   const kotAlert = useKotStatusAlerts(kotsState.data);
@@ -159,16 +176,7 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
   // A billed order is locked: adding/editing lines would desync the bill.
   const orderLocked = !!order?.billId;
 
-  // Once a takeaway bill is settled the order closes — reset to a clean slate
-  // so the next customer starts a fresh order.
-  useEffect(() => {
-    if (isDineIn || billId !== null) return;
-    if (takeawayOrderState.data?.status === "closed") {
-      mirrorRef.current = null;
-      setTakeawayOrderId(null);
-      setSheetOpen(false);
-    }
-  }, [isDineIn, billId, takeawayOrderState.data?.status]);
+  // (The takeaway-reset effect lives below the write helpers it depends on.)
 
   const enabledCategories = useMemo(
     () => categoriesState.data.filter((c) => c.enabled),
@@ -197,7 +205,13 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
     [filteredItems]
   );
 
-  const lines: OrderItem[] = order?.items?.filter((l) => !l.voided) ?? [];
+  // Memoized: this array seeds `pendingByItem`/`pendingCount`/`itemCount`
+  // below, so rebuilding it every render invalidated all three of their
+  // useMemos and handed the grid fresh props on every keystroke.
+  const lines: OrderItem[] = useMemo(
+    () => order?.items?.filter((l) => !l.voided) ?? [],
+    [order?.items]
+  );
 
   // menuItemId -> the editable (pending, note-less) line, for the card stepper.
   const pendingByItem = useMemo(() => {
@@ -229,13 +243,22 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
     null
   );
   const inflightRef = useRef(0);
+  // A queued (debounced) line-set that hasn't been handed to Firestore yet.
+  const queuedRef = useRef<{
+    orderId: string;
+    items: OrderItem[];
+    what: string;
+  } | null>(null);
+  const queueTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (inflightRef.current > 0) return; // trust local edits still in flight
+    // Trust local edits that are still in flight OR still queued — adopting the
+    // snapshot underneath either one would visibly revert the waiter's taps.
+    if (inflightRef.current > 0 || queuedRef.current) return;
     mirrorRef.current = order ? { orderId: order.id, items: order.items } : null;
   }, [order]);
 
-  const track = (write: Promise<unknown>, what: string) => {
+  const track = useCallback((write: Promise<unknown>, what: string) => {
     inflightRef.current += 1;
     write
       .catch((e) =>
@@ -244,7 +267,70 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
       .finally(() => {
         inflightRef.current -= 1;
       });
-  };
+  }, []);
+
+  // ── Write coalescing ──────────────────────────────────────────────────────
+  // Every tap used to persist the WHOLE items array: five taps on one item was
+  // five full-document writes. The waiter never felt them directly (the mirror
+  // paints instantly), but Send KOT does — `flushPendingWrites` blocks until
+  // every one of them is acked by the server. Taps are coalesced into one
+  // trailing write instead; the mirror still updates synchronously, so the UI
+  // is exactly as immediate as before.
+
+  /** Hand any queued line-set to Firestore now. Safe to call when empty. */
+  const flushQueuedWrite = useCallback(() => {
+    if (queueTimerRef.current) {
+      clearTimeout(queueTimerRef.current);
+      queueTimerRef.current = null;
+    }
+    const queued = queuedRef.current;
+    if (!queued) return;
+    queuedRef.current = null;
+    track(writeOrderItems(queued.orderId, queued.items), queued.what);
+  }, [track]);
+
+  /** Queue a line-set write, replacing any pending one for the same order. */
+  const queueWrite = useCallback(
+    (orderId: string, items: OrderItem[], what: string) => {
+      // Never coalesce across orders: a queued write for a DIFFERENT order
+      // belongs to that order and must land on it.
+      const queued = queuedRef.current;
+      if (queued && queued.orderId !== orderId) flushQueuedWrite();
+      queuedRef.current = { orderId, items, what };
+      if (queueTimerRef.current) clearTimeout(queueTimerRef.current);
+      queueTimerRef.current = setTimeout(flushQueuedWrite, WRITE_COALESCE_MS);
+    },
+    [flushQueuedWrite]
+  );
+
+  /** Drop a queued write without persisting it — only for orders that have
+   *  since been locked (billed/closed), where the write would be rejected. */
+  const discardQueuedWrite = useCallback(() => {
+    if (queueTimerRef.current) {
+      clearTimeout(queueTimerRef.current);
+      queueTimerRef.current = null;
+    }
+    queuedRef.current = null;
+  }, []);
+
+  // Leaving the screen mid-edit must not lose the last taps.
+  useEffect(() => () => flushQueuedWrite(), [flushQueuedWrite]);
+
+  // Once a takeaway bill is settled the order closes — reset to a clean slate
+  // so the next customer starts a fresh order.
+  useEffect(() => {
+    if (isDineIn || billId !== null) return;
+    if (takeawayOrderState.data?.status === "closed") {
+      // The order is settled and immutable — a straggling queued write would
+      // be rejected by rules, and would also block the mirror from re-adopting
+      // the next order's snapshot. (In practice `orderLocked` has blocked new
+      // edits since the bill was generated, so there is nothing to lose.)
+      discardQueuedWrite();
+      mirrorRef.current = null;
+      setTakeawayOrderId(null);
+      setSheetOpen(false);
+    }
+  }, [isDineIn, billId, takeawayOrderState.data?.status, discardQueuedWrite]);
 
   /**
    * Pick an abandoned counter order back up. Only the id is needed: the live
@@ -253,57 +339,70 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
    */
   const handleResume = (id: string) => {
     tapFeedback();
+    flushQueuedWrite(); // land any edits to the outgoing order first
     mirrorRef.current = null; // let the incoming snapshot seed the lines
     setTakeawayOrderId(id);
   };
 
-  const handleAdd = (item: MenuItemDoc) => {
-    if (!waiterId || busy || orderLocked) return;
-    tapFeedback();
-    animateNextLayout(); // a new line may enter the order sheet/cart bar
-    const mirror = mirrorRef.current;
-    if (mirror) {
-      const items = mergeItemIntoLines(
-        mirror.items,
-        item.id,
-        item.name,
-        item.price
-      );
+  // These three are handed to every grid card / line row, so a fresh identity
+  // per render defeats the memo() on all of them.
+  const handleAdd = useCallback(
+    (item: MenuItemDoc) => {
+      if (!waiterId || busy || orderLocked) return;
+      tapFeedback();
+      animateNextLayout(); // a new line may enter the order sheet/cart bar
+      const mirror = mirrorRef.current;
+      if (mirror) {
+        const items = mergeItemIntoLines(
+          mirror.items,
+          item.id,
+          item.name,
+          item.price
+        );
+        mirrorRef.current = { ...mirror, items };
+        queueWrite(mirror.orderId, items, "Couldn’t add item");
+      } else {
+        // First add is NOT coalesced: it mints the order id and occupies the
+        // table, and the rest of the screen keys off that landing.
+        const created = createOrderLocal({
+          tableId: tableId ?? null,
+          orderType,
+          waiterId,
+          menuItemId: item.id,
+          name: item.name,
+          price: item.price,
+        });
+        mirrorRef.current = { orderId: created.orderId, items: created.items };
+        if (!isDineIn) setTakeawayOrderId(created.orderId);
+        track(created.commit, "Couldn’t add item");
+      }
+    },
+    [waiterId, busy, orderLocked, tableId, orderType, isDineIn, track, queueWrite]
+  );
+
+  const handleQty = useCallback(
+    (lineId: string, qty: number) => {
+      const mirror = mirrorRef.current;
+      if (!mirror || busy || orderLocked) return;
+      tapFeedback(); // light impact on every +/- press
+      if (qty <= 0) animateNextLayout(); // the row is about to leave the list
+      const items = setLineQtyInLines(mirror.items, lineId, qty);
       mirrorRef.current = { ...mirror, items };
-      track(writeOrderItems(mirror.orderId, items), "Couldn’t add item");
-    } else {
-      // First add: mint the order (and occupy the table) in one local batch.
-      const created = createOrderLocal({
-        tableId: tableId ?? null,
-        orderType,
-        waiterId,
-        menuItemId: item.id,
-        name: item.name,
-        price: item.price,
-      });
-      mirrorRef.current = { orderId: created.orderId, items: created.items };
-      if (!isDineIn) setTakeawayOrderId(created.orderId);
-      track(created.commit, "Couldn’t add item");
-    }
-  };
+      queueWrite(mirror.orderId, items, "Couldn’t update quantity");
+    },
+    [busy, orderLocked, queueWrite]
+  );
 
-  const handleQty = (lineId: string, qty: number) => {
-    const mirror = mirrorRef.current;
-    if (!mirror || busy || orderLocked) return;
-    tapFeedback(); // light impact on every +/- press
-    if (qty <= 0) animateNextLayout(); // the row is about to leave the list
-    const items = setLineQtyInLines(mirror.items, lineId, qty);
-    mirrorRef.current = { ...mirror, items };
-    track(writeOrderItems(mirror.orderId, items), "Couldn’t update quantity");
-  };
-
-  const handleNotes = (lineId: string, notes: string) => {
-    const mirror = mirrorRef.current;
-    if (!mirror || busy || orderLocked) return;
-    const items = setLineNotesInLines(mirror.items, lineId, notes);
-    mirrorRef.current = { ...mirror, items };
-    track(writeOrderItems(mirror.orderId, items), "Couldn’t save note");
-  };
+  const handleNotes = useCallback(
+    (lineId: string, notes: string) => {
+      const mirror = mirrorRef.current;
+      if (!mirror || busy || orderLocked) return;
+      const items = setLineNotesInLines(mirror.items, lineId, notes);
+      mirrorRef.current = { ...mirror, items };
+      queueWrite(mirror.orderId, items, "Couldn’t save note");
+    },
+    [busy, orderLocked, queueWrite]
+  );
 
   const handleSendKot = async () => {
     if (!orderId || pendingCount === 0 || busy) return;
@@ -311,7 +410,9 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
     setBusy(true);
     try {
       // The KOT transaction reads the order from the SERVER — make sure every
-      // local (latency-compensated) edit has landed there first.
+      // local edit has landed there first. Order matters: hand the coalesced
+      // write to Firestore, THEN wait for the queue to drain to the server.
+      flushQueuedWrite();
       await flushPendingWrites();
       const kotId = await sendKot(orderId, tableLabel);
       // Fire-and-forget: the KOT is already committed, a printer problem must
@@ -363,6 +464,7 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
     mediumTapFeedback();
     setBusy(true);
     try {
+      flushQueuedWrite();
       await flushPendingWrites();
       const id = await generateBill(order, waiterId, tableLabel, gstEnabled);
       setBillId(id);
@@ -380,24 +482,26 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
   const errorState =
     categoriesState.error || itemsState.error || openOrderState.error;
 
-  const renderCard = ({ item }: { item: GridEntry }) => {
-    if (item.id === SPACER) return <View style={styles.gridCell} />;
-    const menuItem = item as MenuItemDoc;
-    const pending = pendingByItem.get(menuItem.id);
-    return (
-      <View style={styles.gridCell}>
-        <OrderMenuCard
-          item={menuItem}
-          qty={pending?.qty ?? 0}
-          disabled={!waiterId}
-          onAdd={() => handleAdd(menuItem)}
-          onDecrement={() =>
-            pending && handleQty(pending.lineId, pending.qty - 1)
-          }
-        />
-      </View>
-    );
-  };
+  const renderCard = useCallback(
+    ({ item }: { item: GridEntry }) => {
+      if (item.id === SPACER) return <View style={styles.gridCell} />;
+      const menuItem = item as MenuItemDoc;
+      const pending = pendingByItem.get(menuItem.id);
+      return (
+        <View style={styles.gridCell}>
+          <OrderMenuCard
+            item={menuItem}
+            qty={pending?.qty ?? 0}
+            pendingLineId={pending?.lineId ?? null}
+            disabled={!waiterId}
+            onAdd={handleAdd}
+            onDecrement={handleQty}
+          />
+        </View>
+      );
+    },
+    [pendingByItem, waiterId, handleAdd, handleQty]
+  );
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -503,9 +607,17 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
             columnWrapperStyle={styles.gridRow}
             contentContainerStyle={[
               styles.gridContent,
-              { paddingBottom: insets.bottom + (lines.length > 0 ? 96 : space.s6) },
+              { paddingBottom: tabBarClearance + (lines.length > 0 ? 96 : space.s6) },
             ]}
             showsVerticalScrollIndicator={false}
+            // Each card decodes a photo, so mounting a big first batch is what
+            // the waiter feels as "the menu takes a moment". Render ~3 rows up
+            // front and let the rest stream in as they scroll.
+            initialNumToRender={6}
+            maxToRenderPerBatch={6}
+            updateCellsBatchingPeriod={50}
+            windowSize={5}
+            removeClippedSubviews
             ListEmptyComponent={
               <View style={styles.center}>
                 <Text style={styles.emptyText}>No items found.</Text>
@@ -520,7 +632,7 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
         <Pressable
           style={({ pressed }) => [
             styles.cartBar,
-            { bottom: insets.bottom + space.s5 },
+            { bottom: tabBarClearance + space.s5 },
             pressed && styles.cartBarPressed,
           ]}
           onPress={() => {
@@ -576,6 +688,13 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
                   <OrderLineRow
                     key={line.lineId}
                     line={line}
+                    // Live kitchen progress, derived from this screen's kot
+                    // subscription. Falls back to the line's own persisted
+                    // status while the kot snapshot is still in flight (which
+                    // sendKot has already set to "sent").
+                    liveStatus={
+                      line.kotId ? lineStatusByKot.get(line.kotId) : undefined
+                    }
                     onQty={(qty) => handleQty(line.lineId, qty)}
                     onNotes={(notes) => handleNotes(line.lineId, notes)}
                   />
@@ -695,6 +814,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   bell: {
+    fontFamily: fonts.regular,
     fontSize: 18,
   },
   titleBlock: {
@@ -702,12 +822,7 @@ const styles = StyleSheet.create({
     paddingBottom: space.s3,
     gap: space.s1,
   },
-  title: {
-    fontFamily: fonts.extrabold,
-    fontSize: 28,
-    color: colors.text,
-    letterSpacing: -0.4,
-  },
+  title: { ...typography.screenTitle, color: colors.text },
 
   resumeWrap: { paddingBottom: space.s3, gap: space.s2 },
   resumeTitle: {
@@ -849,7 +964,7 @@ const styles = StyleSheet.create({
   sheetBackdrop: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: colors.scrim,
   },
   backdropFill: {
     flex: 1,

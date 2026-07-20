@@ -13,7 +13,7 @@ import { Feather } from "@expo/vector-icons";
 import { formatMoney } from "@/lib/money";
 import { PressableScale } from "@/components/PressableScale";
 import { DietBadge } from "@/features/menu/DietBadge";
-import { resolveMenuImage } from "@/features/menu/menuImages";
+import { useMenuImage } from "@/features/menu/menuImageStore";
 import { colors, fonts, radius, shadow, space } from "@/theme/theme";
 import type { MenuItem } from "@/types/models";
 
@@ -21,20 +21,36 @@ interface OrderMenuCardProps {
   item: MenuItem & { id: string };
   /** Qty of this item on the current (editable/pending) order line; 0 = none. */
   qty: number;
-  onAdd: () => void;
-  onDecrement: () => void;
+  /** lineId of that pending line, or null when the item isn't on the order. */
+  pendingLineId: string | null;
+  /**
+   * Both take their arguments rather than closing over them, so the screen can
+   * hand down ONE stable function for the whole grid. Per-card arrow props
+   * (`onAdd={() => add(item)}`) are rebuilt on every parent render and silently
+   * defeat the memo() below — which is what made search-as-you-type crawl.
+   */
+  onAdd: (item: MenuItem & { id: string }) => void;
+  onDecrement: (lineId: string, nextQty: number) => void;
   disabled?: boolean;
 }
 
 function OrderMenuCardImpl({
   item,
   qty,
+  pendingLineId,
   onAdd,
   onDecrement,
   disabled,
 }: OrderMenuCardProps) {
   const inOrder = qty > 0;
-  const imageSource = resolveMenuImage(item.id, item.imageUrl);
+  // Pulled lazily from menuItemImages/{id}; undefined until it lands, which
+  // renders the placeholder for a beat instead of blocking the whole grid.
+  const imageSource = useMenuImage(item);
+  // Cheap to rebuild here: this only runs when the card itself re-renders.
+  const handleAdd = () => onAdd(item);
+  const handleDecrement = () => {
+    if (pendingLineId) onDecrement(pendingLineId, qty - 1);
+  };
   return (
     <View style={styles.card}>
       {imageSource ? (
@@ -67,7 +83,7 @@ function OrderMenuCardImpl({
               <PressableScale
                 hitSlop={8}
                 style={styles.stepBtn}
-                onPress={onDecrement}
+                onPress={handleDecrement}
                 disabled={disabled}
               >
                 <Text style={styles.stepGlyph}>−</Text>
@@ -76,7 +92,7 @@ function OrderMenuCardImpl({
               <PressableScale
                 hitSlop={8}
                 style={styles.stepBtn}
-                onPress={onAdd}
+                onPress={handleAdd}
                 disabled={disabled}
               >
                 <Text style={styles.stepGlyph}>+</Text>
@@ -86,7 +102,7 @@ function OrderMenuCardImpl({
             <PressableScale
               hitSlop={8}
               style={[styles.addBtn, disabled && styles.addBtnDisabled]}
-              onPress={onAdd}
+              onPress={handleAdd}
               disabled={disabled}
             >
               <Text style={styles.addGlyph}>＋</Text>

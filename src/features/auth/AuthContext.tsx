@@ -21,8 +21,10 @@
  */
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -217,45 +219,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const value: AuthState = {
-    firebaseUser,
-    profile,
-    role: profile?.role ?? null,
-    restaurantId,
-    gate,
-    loading,
-    notice,
-    signIn: async (email, password) => {
-      setNotice(null);
-      const cred = await signInWithEmailAndPassword(auth, email, password);
-      // Surface "not linked" as a login error instead of a silent bounce.
-      // (The index listener above races to the same conclusion; tolerate its
-      // sign-out making this read fail.)
-      try {
-        const idx = await getDoc(paths.userIndex(cred.user.uid));
-        if (!idx.exists() && !devFallbackRestaurantId()) {
-          await fbSignOut(auth).catch(() => {});
-          throw new Error(NOT_LINKED_MESSAGE);
-        }
-      } catch (e) {
-        if (e instanceof Error && e.message === NOT_LINKED_MESSAGE) throw e;
-        if (!auth.currentUser) throw new Error(NOT_LINKED_MESSAGE);
-        // Index unreadable but still signed in (offline blip) — let the
-        // listener sort it out.
+  // The actions close over nothing that changes (setNotice is a stable setter),
+  // so they keep one identity for the app's lifetime.
+  const signIn = useCallback<AuthState["signIn"]>(async (email, password) => {
+    setNotice(null);
+    const cred = await signInWithEmailAndPassword(auth, email, password);
+    // Surface "not linked" as a login error instead of a silent bounce.
+    // (The index listener above races to the same conclusion; tolerate its
+    // sign-out making this read fail.)
+    try {
+      const idx = await getDoc(paths.userIndex(cred.user.uid));
+      if (!idx.exists() && !devFallbackRestaurantId()) {
+        await fbSignOut(auth).catch(() => {});
+        throw new Error(NOT_LINKED_MESSAGE);
       }
-    },
-    registerRestaurant: async (restaurantName, ownerName, email, password) => {
+    } catch (e) {
+      if (e instanceof Error && e.message === NOT_LINKED_MESSAGE) throw e;
+      if (!auth.currentUser) throw new Error(NOT_LINKED_MESSAGE);
+      // Index unreadable but still signed in (offline blip) — let the
+      // listener sort it out.
+    }
+  }, []);
+
+  const registerRestaurantAction = useCallback<AuthState["registerRestaurant"]>(
+    async (restaurantName, ownerName, email, password) => {
       setNotice(null);
       await registerRestaurant(restaurantName, ownerName, email, password);
     },
-    joinRestaurant: async (joinCode, name, email, password, role) => {
+    [],
+  );
+
+  const joinRestaurantAction = useCallback<AuthState["joinRestaurant"]>(
+    async (joinCode, name, email, password, role) => {
       setNotice(null);
       await joinRestaurant(joinCode, name, email, password, role);
     },
-    signOut: async () => {
-      await fbSignOut(auth);
-    },
-  };
+    [],
+  );
+
+  const signOut = useCallback<AuthState["signOut"]>(async () => {
+    await fbSignOut(auth);
+  }, []);
+
+  // Memoized: a fresh object literal here re-renders EVERY screen in the app on
+  // any provider render (every KOT snapshot, every profile tick), which is what
+  // made tapping and typing feel laggy everywhere.
+  const value = useMemo<AuthState>(
+    () => ({
+      firebaseUser,
+      profile,
+      role: profile?.role ?? null,
+      restaurantId,
+      gate,
+      loading,
+      notice,
+      signIn,
+      registerRestaurant: registerRestaurantAction,
+      joinRestaurant: joinRestaurantAction,
+      signOut,
+    }),
+    [
+      firebaseUser,
+      profile,
+      restaurantId,
+      gate,
+      loading,
+      notice,
+      signIn,
+      registerRestaurantAction,
+      joinRestaurantAction,
+      signOut,
+    ],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

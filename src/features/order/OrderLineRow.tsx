@@ -20,6 +20,13 @@ import type { KotItemStatus, OrderItem } from "@/types/models";
 
 interface OrderLineRowProps {
   line: OrderItem;
+  /**
+   * Live kitchen progress for this line, derived by the screen from the order's
+   * kot subscription. Display only — EDITABILITY still keys off the line's own
+   * persisted `kotStatus`, which `sendKot` owns. Undefined for an un-fired line
+   * (or before its ticket's snapshot lands), where `line.kotStatus` is correct.
+   */
+  liveStatus?: KotItemStatus;
   /** Commit a new quantity (0 removes the line). Pending lines only. */
   onQty: (qty: number) => void;
   /** Commit special-instructions text. Pending lines only. */
@@ -34,8 +41,14 @@ const STATUS_LABEL: Record<KotItemStatus, string> = {
   served: "Served",
 };
 
-function OrderLineRowImpl({ line, onQty, onNotes }: OrderLineRowProps) {
+function OrderLineRowImpl({
+  line,
+  liveStatus,
+  onQty,
+  onNotes,
+}: OrderLineRowProps) {
   const editable = line.kotStatus === "pending" && !line.voided;
+  const shownStatus = liveStatus ?? line.kotStatus;
   const [notes, setNotes] = useState(line.notes ?? "");
   const [notesOpen, setNotesOpen] = useState(false);
 
@@ -99,7 +112,7 @@ function OrderLineRowImpl({ line, onQty, onNotes }: OrderLineRowProps) {
         ) : (
           <View style={styles.statusBadge}>
             <Text style={styles.statusText}>
-              {STATUS_LABEL[line.kotStatus]}
+              {STATUS_LABEL[shownStatus]}
             </Text>
           </View>
         )}

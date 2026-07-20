@@ -8,7 +8,10 @@ export const colors = {
   primaryDark: "#00336F",
   primarySoft: "#e6eefb", // selected card / active nav background
   accentBlue: "#1565C0", // KDS "Start" / urgent
-  danger: "#e5484d", // voids, negative deltas
+  // Darkened from #e5484d, which fell to 3.6:1 on the canvas — below WCAG AA.
+  // Error text is the copy users most need to read, and this doubles as the
+  // background of destructive buttons, so it has to clear 4.5:1 both ways.
+  danger: "#c73f43", // voids, negative deltas
 
   bg: "#f4f5f7", // app canvas
   floor: "#f8f9fa", // Tables floor canvas + image placeholders (soft grid backdrop)
@@ -18,11 +21,16 @@ export const colors = {
   inputBorder: "#e2e8f0", // subtle input hairline (premium notes field)
 
   text: "#1a1a1a",
-  textMuted: "#6b7280",
+  // Darkened from #6b7280 (4.43:1 on the canvas — a hair under AA). Carries
+  // every subtitle, timestamp and field label in the app, often read at arm's
+  // length under harsh restaurant lighting.
+  textMuted: "#686f7c",
   textInverse: "#ffffff",
 
   border: "#e5e7eb",
   borderStrong: "#d1d5db",
+
+  scrim: "rgba(0,0,0,0.35)", // dim behind every modal / bottom sheet
 
   navySoft: "#e2ebfa",
   navyText: "#0047A1",
@@ -35,7 +43,7 @@ export const colors = {
 
   // KDS status system: red = active first-round order, indigo = table has an
   // additional round, green = completed.
-  statusRed: "#D32F2F",
+  statusRed: "#cd2e2e", // darkened from #D32F2F for AA on statusRedSoft
   statusRedSoft: "#fdeceb",
   statusIndigo: "#3538CD",
   statusIndigoSoft: "#e9eafc",
@@ -100,6 +108,52 @@ export const fonts = {
   semibold: "PlusJakartaSans_600SemiBold",
   bold: "PlusJakartaSans_700Bold",
   extrabold: "PlusJakartaSans_800ExtraBold",
+} as const;
+
+/**
+ * Semantic type scale. Plus Jakarta Sans ships as five *separate* families, so
+ * weight must be selected via `fontFamily` — a bare `fontWeight` silently falls
+ * back to the system face. Always spread one of these instead of hand-rolling
+ * a size/weight pair, so headers stay the same size on every screen.
+ */
+export const typography = {
+  /** Big screen header ("Tables", "Bills", "Account"). Negative tracking
+   *  keeps the extrabold face from looking loose at display size. */
+  screenTitle: { fontFamily: fonts.extrabold, fontSize: 28, letterSpacing: -0.4 },
+  /** Sub-line under a screen title. */
+  screenSubtitle: { fontFamily: fonts.regular, fontSize: 14 },
+  /** Title inside a modal / bottom sheet. */
+  sheetTitle: { fontFamily: fonts.extrabold, fontSize: 19 },
+  /** Header of a card or grouped section. */
+  cardTitle: { fontFamily: fonts.bold, fontSize: 16 },
+  /** Small uppercase group label above a list ("PENDING REQUESTS", "TEAM").
+   *  Not for content headings like a menu category name. */
+  sectionLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 13,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  /** Default running text. */
+  body: { fontFamily: fonts.regular, fontSize: 15 },
+  /** Running text that needs emphasis (values, names). */
+  bodyStrong: { fontFamily: fonts.semibold, fontSize: 15 },
+  /** Field labels, captions, timestamps. */
+  caption: { fontFamily: fonts.regular, fontSize: 13 },
+  /** Button / CTA text. */
+  button: { fontFamily: fonts.bold, fontSize: 16 },
+} as const;
+
+/**
+ * Interaction states. These were hand-picked per screen and had drifted to
+ * five different disabled values (0.4 → 0.6), so the same "unavailable" button
+ * looked differently unavailable depending on where you met it.
+ */
+export const opacity = {
+  /** Held down. */
+  pressed: 0.7,
+  /** Not actionable yet. Low enough to read as off, high enough to stay legible. */
+  disabled: 0.45,
 } as const;
 
 /** Locale / currency. */

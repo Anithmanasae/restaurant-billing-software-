@@ -16,7 +16,8 @@ import { useCollectionData } from "@/lib/firestore/useRealtime";
 import { setTableCount } from "@/features/tables/tablesApi";
 import { successFeedback, tapFeedback } from "@/lib/feedback";
 import { Loading } from "@/components/Loading";
-import { colors, space, radius, shadow } from "@/theme/theme";
+import { useTabBarClearance } from "@/lib/useTabBarClearance";
+import { colors, fonts, space, radius, shadow, typography, opacity } from "@/theme/theme";
 import type { Table } from "@/types/models";
 
 const MAX_TABLES = 200;
@@ -32,6 +33,8 @@ const MAX_TABLES = 200;
 export default function TablesSetupRoute() {
   const { role } = useAuth();
   const canManage = role === "cashier" || role === "admin";
+  // Above the early returns below — hooks can't be conditional.
+  const tabBarClearance = useTabBarClearance();
 
   const tablesQuery = useMemo(() => paths.tables(), []);
   const { data: tables, loading } = useCollectionData<Table>(tablesQuery);
@@ -90,7 +93,10 @@ export default function TablesSetupRoute() {
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: tabBarClearance + space.s6 },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
@@ -203,15 +209,15 @@ function StatusPill({ label, value }: { label: string; value: number }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  // paddingBottom is applied at the call site — it has to clear the tab bar.
   scrollContent: {
     padding: space.s6,
     gap: space.s3,
-    paddingBottom: space.s6 * 2,
   },
   header: { flexDirection: "row", alignItems: "center", gap: space.s3 },
   backBtn: { paddingVertical: space.s1, paddingRight: space.s2 },
-  backBtnText: { color: colors.primary, fontSize: 17, fontWeight: "700" },
-  title: { fontSize: 28, fontWeight: "800", color: colors.text },
+  backBtnText: { color: colors.primary, fontSize: 17, fontFamily: fonts.bold },
+  title: { ...typography.screenTitle, color: colors.text },
 
   summaryCard: {
     backgroundColor: colors.surface,
@@ -221,8 +227,8 @@ const styles = StyleSheet.create({
     gap: space.s1,
     ...shadow.card,
   },
-  summaryCount: { fontSize: 48, fontWeight: "800", color: colors.primary },
-  summaryLabel: { fontSize: 14, color: colors.textMuted },
+  summaryCount: { fontSize: 48, fontFamily: fonts.extrabold, color: colors.primary },
+  summaryLabel: { fontFamily: fonts.regular, fontSize: 14, color: colors.textMuted },
   statusRow: {
     flexDirection: "row",
     gap: space.s3,
@@ -236,16 +242,13 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     minWidth: 84,
   },
-  pillValue: { fontSize: 18, fontWeight: "800", color: colors.text },
-  pillLabel: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  pillValue: { fontSize: 18, fontFamily: fonts.extrabold, color: colors.text },
+  pillLabel: { fontFamily: fonts.regular, fontSize: 11, color: colors.textMuted, marginTop: 2 },
 
   sectionTitle: {
+    ...typography.sectionLabel,
     marginTop: space.s4,
-    fontSize: 13,
-    fontWeight: "700",
     color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
   },
   stepperCard: {
     flexDirection: "row",
@@ -265,18 +268,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  stepBtnDisabled: { opacity: 0.4 },
-  stepBtnText: { fontSize: 30, fontWeight: "800", color: colors.primary },
+  stepBtnDisabled: { opacity: opacity.disabled },
+  stepBtnText: { fontSize: 30, fontFamily: fonts.extrabold, color: colors.primary },
   countInput: {
     minWidth: 96,
     textAlign: "center",
     fontSize: 40,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.text,
     paddingVertical: space.s2,
   },
 
   warn: {
+    fontFamily: fonts.regular,
     fontSize: 13,
     color: colors.danger,
     lineHeight: 19,
@@ -290,12 +294,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   saveBtnDisabled: { backgroundColor: colors.borderStrong },
-  saveText: { color: colors.textInverse, fontSize: 16, fontWeight: "700" },
+  saveText: { color: colors.textInverse, fontSize: 16, fontFamily: fonts.bold },
   footnote: {
     marginTop: space.s4,
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.textMuted,
     lineHeight: 18,
   },
-  pressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  pressed: { opacity: opacity.pressed, transform: [{ scale: 0.98 }] },
 });

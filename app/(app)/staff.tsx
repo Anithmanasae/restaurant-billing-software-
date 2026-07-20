@@ -22,7 +22,8 @@ import { paths } from "@/lib/firestore/paths";
 import { agoLabel, elapsedMs } from "@/lib/date";
 import { animateNextLayout, successFeedback, tapFeedback } from "@/lib/feedback";
 import { Loading } from "@/components/Loading";
-import { colors, space, radius, shadow } from "@/theme/theme";
+import { useTabBarClearance } from "@/lib/useTabBarClearance";
+import { colors, fonts, space, radius, shadow, typography, opacity } from "@/theme/theme";
 import type { AppUser } from "@/types/models";
 
 /**
@@ -37,6 +38,8 @@ import type { AppUser } from "@/types/models";
 export default function StaffRoute() {
   const { role, profile } = useAuth();
   const [users, setUsers] = useState<AppUser[] | null>(null);
+  // Above the early returns below — hooks can't be conditional.
+  const tabBarClearance = useTabBarClearance();
 
   const canManage = role === "cashier" || role === "admin";
 
@@ -115,7 +118,10 @@ export default function StaffRoute() {
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: tabBarClearance + space.s6 },
+        ]}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
@@ -257,22 +263,19 @@ export default function StaffRoute() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  // paddingBottom is applied at the call site — it has to clear the tab bar.
   scrollContent: {
     padding: space.s6,
     gap: space.s3,
-    paddingBottom: space.s6 * 2,
   },
   header: { flexDirection: "row", alignItems: "center", gap: space.s3 },
   backBtn: { paddingVertical: space.s1, paddingRight: space.s2 },
-  backBtnText: { color: colors.primary, fontSize: 17, fontWeight: "700" },
-  title: { fontSize: 28, fontWeight: "800", color: colors.text },
+  backBtnText: { color: colors.primary, fontSize: 17, fontFamily: fonts.bold },
+  title: { ...typography.screenTitle, color: colors.text },
   sectionTitle: {
+    ...typography.sectionLabel,
     marginTop: space.s4,
-    fontSize: 13,
-    fontWeight: "700",
     color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
   },
   emptyCard: {
     backgroundColor: colors.surface,
@@ -280,7 +283,7 @@ const styles = StyleSheet.create({
     padding: space.s5,
     ...shadow.card,
   },
-  emptyText: { color: colors.textMuted, fontSize: 14, lineHeight: 20 },
+  emptyText: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 14, lineHeight: 20 },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -295,11 +298,11 @@ const styles = StyleSheet.create({
     gap: space.s3,
   },
   who: { flex: 1, gap: 2 },
-  name: { fontSize: 17, fontWeight: "700", color: colors.text },
-  email: { fontSize: 13, color: colors.textMuted },
-  meta: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  name: { fontSize: 17, fontFamily: fonts.bold, color: colors.text },
+  email: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted },
+  meta: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMuted, marginTop: 2 },
   activeCol: { alignItems: "center", gap: 2 },
-  activeLabel: { fontSize: 11, fontWeight: "600", color: colors.primary },
+  activeLabel: { fontSize: 11, fontFamily: fonts.semibold, color: colors.primary },
   offLabel: { color: colors.danger },
   actionsRow: { flexDirection: "row", gap: space.s3 },
   approveBtn: {
@@ -309,7 +312,7 @@ const styles = StyleSheet.create({
     padding: space.s3,
     alignItems: "center",
   },
-  approveText: { color: colors.textInverse, fontWeight: "700", fontSize: 15 },
+  approveText: { color: colors.textInverse, fontFamily: fonts.bold, fontSize: 15 },
   denyBtn: {
     flex: 1,
     borderWidth: 1,
@@ -318,14 +321,15 @@ const styles = StyleSheet.create({
     padding: space.s3,
     alignItems: "center",
   },
-  denyText: { color: colors.danger, fontWeight: "700", fontSize: 15 },
+  denyText: { color: colors.danger, fontFamily: fonts.bold, fontSize: 15 },
   removeLink: { alignSelf: "flex-start" },
-  removeText: { color: colors.danger, fontSize: 13, fontWeight: "600" },
+  removeText: { color: colors.danger, fontSize: 13, fontFamily: fonts.semibold },
   footnote: {
     marginTop: space.s4,
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.textMuted,
     lineHeight: 18,
   },
-  pressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  pressed: { opacity: opacity.pressed, transform: [{ scale: 0.98 }] },
 });

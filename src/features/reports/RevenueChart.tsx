@@ -12,7 +12,7 @@ import Svg, {
   Path,
   Stop,
 } from "react-native-svg";
-import { colors, space } from "@/theme/theme";
+import { colors, fonts, space } from "@/theme/theme";
 import { formatMoney } from "@/lib/money";
 import type { RevenuePoint } from "./reportsData";
 
@@ -149,6 +149,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   emptyText: {
+    fontFamily: fonts.regular,
     fontSize: 13,
     color: colors.textMuted,
   },
@@ -167,6 +168,7 @@ const styles = StyleSheet.create({
   },
   peakCaption: {
     marginTop: space.s1,
+    fontFamily: fonts.regular,
     fontSize: 11,
     color: colors.textMuted,
     textAlign: "right",

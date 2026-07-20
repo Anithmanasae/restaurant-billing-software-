@@ -5,9 +5,10 @@
  * All data is live via the ported hooks (useMenuCategories / useMenuItems) and
  * every write goes through menuApi (never Firestore directly from the screen).
  */
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Alert,
+  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,10 +17,11 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarClearance } from "@/lib/useTabBarClearance";
 import { FadeSlideIn } from "@/components/FadeSlideIn";
 import { MenuGridSkeleton } from "@/components/Skeleton";
 import { mediumTapFeedback, selectionFeedback } from "@/lib/feedback";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { colors, fonts, radius, shadow, space, typography } from "@/theme/theme";
 import { deleteMenuItem, setMenuItemEnabled } from "./menuApi";
 import { useMenuCategories, useMenuItems } from "./useMenuData";
 import type { MenuCategoryDoc, MenuItemDoc } from "./useMenuData";
@@ -32,8 +34,14 @@ const ALL = "__all__";
 /** Hard cap on the menu size — keeps grids and realtime listeners snappy. */
 export const MAX_MENU_ITEMS = 1000;
 
+/** One row of the flattened, virtualized menu list. */
+type MenuRow =
+  | { kind: "header"; key: string; title: string }
+  | { kind: "row"; key: string; items: MenuItemDoc[] };
+
 export function MenuManagementScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarClearance = useTabBarClearance();
   const categoriesState = useMenuCategories();
   const itemsState = useMenuItems();
 
@@ -92,6 +100,32 @@ export function MenuManagementScreen() {
     return ordered;
   }, [filteredItems, categoryById]);
 
+  /**
+   * The sections flattened into a single virtualizable list: one entry per
+   * category heading, then one entry per PAIR of items (the grid is 2-up).
+   *
+   * The screen used to render every section inside a ScrollView, which mounts
+   * the whole menu — and decodes every photo — at once. A FlatList over this
+   * flat shape only mounts what's on screen.
+   */
+  const rows = useMemo(() => {
+    const out: MenuRow[] = [];
+    for (const section of sections) {
+      out.push({
+        kind: "header",
+        key: `h:${section.categoryId}`,
+        title:
+          (section.category?.name ?? "Uncategorized") +
+          (section.category && !section.category.enabled ? "  (hidden)" : ""),
+      });
+      for (let i = 0; i < section.items.length; i += 2) {
+        const pair = section.items.slice(i, i + 2);
+        out.push({ kind: "row", key: `r:${pair[0].id}`, items: pair });
+      }
+    }
+    return out;
+  }, [sections]);
+
   const atCapacity = itemsState.data.length >= MAX_MENU_ITEMS;
 
   const openAdd = () => {
@@ -109,13 +143,14 @@ export function MenuManagementScreen() {
     setFormVisible(true);
   };
 
-  const openEdit = (item: MenuItemDoc) => {
+  // Stable identities — these are props of the memoized MenuItemCard.
+  const openEdit = useCallback((item: MenuItemDoc) => {
     setEditingItem(item);
     setFormCategoryId(undefined);
     setFormVisible(true);
-  };
+  }, []);
 
-  const confirmDelete = (item: MenuItemDoc) => {
+  const confirmDelete = useCallback((item: MenuItemDoc) => {
     Alert.alert("Delete item", `Delete "${item.name}"? This cannot be undone.`, [
       { text: "Cancel", style: "cancel" },
       {
@@ -128,13 +163,42 @@ export function MenuManagementScreen() {
         },
       },
     ]);
-  };
+  }, []);
 
-  const toggleEnabled = (item: MenuItemDoc, enabled: boolean) => {
+  const toggleEnabled = useCallback((item: MenuItemDoc, enabled: boolean) => {
     setMenuItemEnabled(item.id, enabled).catch((e) =>
       Alert.alert("Error", e instanceof Error ? e.message : "Failed.")
     );
-  };
+  }, []);
+
+  const renderRow = useCallback(
+    ({ item: row, index }: { item: MenuRow; index: number }) => {
+      if (row.kind === "header") {
+        // The old ScrollView got its inter-category gap from a section wrapper;
+        // flattened, that gap belongs on every heading but the first.
+        return (
+          <Text style={[styles.sectionTitle, index > 0 && styles.sectionTitleGap]}>
+            {row.title}
+          </Text>
+        );
+      }
+      return (
+        <View style={styles.grid}>
+          {row.items.map((item) => (
+            <View key={item.id} style={styles.gridCell}>
+              <MenuItemCard
+                item={item}
+                onEdit={openEdit}
+                onDelete={confirmDelete}
+                onToggleEnabled={toggleEnabled}
+              />
+            </View>
+          ))}
+        </View>
+      );
+    },
+    [openEdit, confirmDelete, toggleEnabled]
+  );
 
   const loading = categoriesState.loading || itemsState.loading;
   const errorState = categoriesState.error || itemsState.error;
@@ -237,41 +301,26 @@ export function MenuManagementScreen() {
         </View>
       ) : (
         <FadeSlideIn>
-        <ScrollView
+        <FlatList
+          data={rows}
+          keyExtractor={(row) => row.key}
+          renderItem={renderRow}
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingBottom: insets.bottom + 96 },
+            { paddingBottom: tabBarClearance + 96 },
           ]}
-        >
-          {sections.length === 0 ? (
+          // Every card decodes a photo, so keep the mounted window small.
+          initialNumToRender={6}
+          maxToRenderPerBatch={6}
+          updateCellsBatchingPeriod={50}
+          windowSize={5}
+          removeClippedSubviews
+          ListEmptyComponent={
             <View style={styles.center}>
               <Text style={styles.emptyText}>No items found.</Text>
             </View>
-          ) : (
-            sections.map((section) => (
-              <View key={section.categoryId} style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                  {section.category?.name ?? "Uncategorized"}
-                  {section.category && !section.category.enabled
-                    ? "  (hidden)"
-                    : ""}
-                </Text>
-                <View style={styles.grid}>
-                  {section.items.map((item) => (
-                    <View key={item.id} style={styles.gridCell}>
-                      <MenuItemCard
-                        item={item}
-                        onEdit={openEdit}
-                        onDelete={confirmDelete}
-                        onToggleEnabled={toggleEnabled}
-                      />
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ))
-          )}
-        </ScrollView>
+          }
+        />
         </FadeSlideIn>
       )}
 
@@ -279,7 +328,7 @@ export function MenuManagementScreen() {
       <Pressable
         style={({ pressed }) => [
           styles.fab,
-          { bottom: insets.bottom + space.s4 },
+          { bottom: tabBarClearance + space.s4 },
           pressed && styles.fabPressed,
         ]}
         onPress={() => {
@@ -329,16 +378,8 @@ const styles = StyleSheet.create({
   headerText: {
     flex: 1,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: colors.text,
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
+  headerTitle: { ...typography.screenTitle, color: colors.text },
+  headerSubtitle: { ...typography.screenSubtitle, color: colors.textMuted, marginTop: 2 },
   manageBtn: {
     paddingHorizontal: space.s3,
     paddingVertical: space.s2,
@@ -349,7 +390,7 @@ const styles = StyleSheet.create({
   },
   manageBtnText: {
     fontSize: 13,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
     color: colors.text,
   },
   searchWrap: {
@@ -364,6 +405,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  // Emoji glyph — leave it on the system font.
   searchIcon: {
     fontSize: 14,
     color: colors.textMuted,
@@ -371,6 +413,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     paddingVertical: space.s3,
+    fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.text,
   },
@@ -394,25 +437,26 @@ const styles = StyleSheet.create({
     borderColor: colors.text,
   },
   chipText: {
+    fontFamily: fonts.regular,
     fontSize: 13,
     color: colors.text,
   },
   chipTextActive: {
     color: colors.textInverse,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
   },
   scrollContent: {
     paddingHorizontal: space.s4,
     paddingTop: space.s2,
   },
-  section: {
-    marginBottom: space.s5,
-  },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.text,
     marginBottom: space.s3,
+  },
+  sectionTitleGap: {
+    marginTop: space.s4,
   },
   grid: {
     flexDirection: "row",
@@ -430,10 +474,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   emptyText: {
+    fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.textMuted,
   },
   errorText: {
+    fontFamily: fonts.regular,
     fontSize: 14,
     color: colors.danger,
     textAlign: "center",
@@ -450,6 +496,6 @@ const styles = StyleSheet.create({
   fabText: {
     color: colors.textInverse,
     fontSize: 15,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
   },
 });

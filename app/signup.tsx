@@ -13,7 +13,7 @@ import { Redirect, router } from "expo-router";
 import { useAuth, type SignupRole } from "@/features/auth/AuthContext";
 import { friendlyAuthError } from "@/features/auth/authErrors";
 import { homePathForRole } from "@/features/auth/roleRoutes";
-import { colors, space, radius } from "@/theme/theme";
+import { colors, fonts, space, radius, typography, opacity } from "@/theme/theme";
 
 type Mode = "create" | "join";
 
@@ -273,9 +273,10 @@ const styles = StyleSheet.create({
     gap: space.s6,
   },
   brand: { alignItems: "center", gap: space.s2 },
+  // Emoji: no fontFamily, the brand face has no glyphs for it.
   logo: { fontSize: 44 },
-  title: { fontSize: 26, fontWeight: "800", color: colors.primary },
-  sub: { color: colors.textMuted, textAlign: "center" },
+  title: { ...typography.screenTitle, color: colors.text },
+  sub: { ...typography.screenSubtitle, color: colors.textMuted, textAlign: "center" },
   form: { gap: space.s3 },
   modeRow: {
     flexDirection: "row",
@@ -292,9 +293,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modeTabOn: { backgroundColor: colors.primary },
-  modeText: { color: colors.text, fontWeight: "600", fontSize: 14 },
+  modeText: { color: colors.text, fontFamily: fonts.semibold, fontSize: 14 },
   modeTextOn: { color: colors.textInverse },
-  label: { fontSize: 13, color: colors.textMuted, marginTop: space.s2 },
+  label: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted, marginTop: space.s2 },
   roleRow: { flexDirection: "row", gap: space.s2, flexWrap: "wrap" },
   roleChip: {
     borderWidth: 1,
@@ -305,20 +306,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.s4,
   },
   roleChipOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-  roleChipText: { color: colors.text, fontWeight: "600", fontSize: 14 },
+  roleChipText: { color: colors.text, fontFamily: fonts.semibold, fontSize: 14 },
   roleChipTextOn: { color: colors.textInverse },
-  roleHint: { fontSize: 12, color: colors.textMuted },
+  roleHint: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMuted },
   input: {
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
     padding: space.s4,
+    fontFamily: fonts.regular,
     fontSize: 16,
     color: colors.text,
   },
-  codeInput: { letterSpacing: 4, fontWeight: "700" },
-  error: { color: colors.danger, fontSize: 14, marginTop: space.s2 },
+  codeInput: { letterSpacing: 4, fontFamily: fonts.bold },
+  error: { color: colors.danger, fontFamily: fonts.regular, fontSize: 14, marginTop: space.s2 },
   button: {
     marginTop: space.s3,
     backgroundColor: colors.primary,
@@ -326,10 +328,10 @@ const styles = StyleSheet.create({
     padding: space.s4,
     alignItems: "center",
   },
-  buttonDisabled: { opacity: 0.6 },
-  buttonPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
-  buttonText: { color: colors.textInverse, fontSize: 16, fontWeight: "700" },
+  buttonDisabled: { opacity: opacity.disabled },
+  buttonPressed: { opacity: opacity.pressed, transform: [{ scale: 0.98 }] },
+  buttonText: { color: colors.textInverse, fontSize: 16, fontFamily: fonts.bold },
   backLink: { alignItems: "center", padding: space.s3 },
-  backText: { color: colors.textMuted, fontSize: 14 },
-  backTextBold: { color: colors.primary, fontWeight: "700" },
+  backText: { color: colors.textMuted, fontFamily: fonts.regular, fontSize: 14 },
+  backTextBold: { color: colors.primary, fontFamily: fonts.bold },
 });

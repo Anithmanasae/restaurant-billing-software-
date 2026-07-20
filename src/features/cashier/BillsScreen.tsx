@@ -11,7 +11,7 @@
  * through `cashierApi` — this screen never touches Firestore or does money
  * math.
  */
-import { useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -23,15 +23,17 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarClearance } from "@/lib/useTabBarClearance";
 import { formatMoney } from "@/lib/money";
 import { FadeSlideIn } from "@/components/FadeSlideIn";
+import { ElapsedTime } from "@/components/ElapsedTime";
 import { BillListSkeleton } from "@/components/Skeleton";
 import {
   mediumTapFeedback,
   successFeedback,
   tapFeedback,
 } from "@/lib/feedback";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { colors, fonts, radius, shadow, space, typography, opacity } from "@/theme/theme";
 import type { Bill, Order, Table } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
 import { useSettings } from "@/features/settings/SettingsContext";
@@ -55,18 +57,16 @@ const ROLE_LABELS: Record<string, string> = {
   kitchen: "Kitchen",
 };
 
-/** ms -> "5m ago" / "1h 20m ago" / "just now". */
-function timeAgo(fromMs: number, nowMs: number): string {
-  const mins = Math.max(0, Math.floor((nowMs - fromMs) / 60000));
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m === 0 ? `${h}h ago` : `${h}h ${m}m ago`;
-}
+// The old local `timeAgo(fromMs, nowMs)` was replaced by <ElapsedTime>, which
+// produces the identical label (lib/date `agoLabel`) but drives itself from a
+// shared ticker instead of a `now` prop. That prop was a fresh number on every
+// render, so it re-rendered every card in the list — and, being computed during
+// render rather than on a timer, the labels only refreshed when something else
+// happened to re-render the screen.
 
 export function BillsScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarClearance = useTabBarClearance();
   const { profile, firebaseUser, role } = useAuth();
   const cashierUid = profile?.uid ?? firebaseUser?.uid ?? "";
   const cashierName = profile?.name ?? "Cashier";
@@ -94,10 +94,13 @@ export function BillsScreen() {
     return map;
   }, [tables]);
 
-  function orderLabel(o: Order): string {
-    if (o.tableId) return tableLabelById.get(o.tableId) ?? "Table";
-    return o.orderType === "delivery" ? "Delivery" : "Takeaway";
-  }
+  const orderLabel = useCallback(
+    (o: Order): string => {
+      if (o.tableId) return tableLabelById.get(o.tableId) ?? "Table";
+      return o.orderType === "delivery" ? "Delivery" : "Takeaway";
+    },
+    [tableLabelById]
+  );
 
   const sections = useMemo(() => {
     const billRows: Row[] = [...bills]
@@ -117,10 +120,15 @@ export function BillsScreen() {
     ].filter((s) => s.data.length > 0);
   }, [bills, orders, preparing]);
 
-  const now = Date.now();
   const loading = billsLoading || ordersLoading;
 
-  async function handleGenerate(order: Order & { id: string }) {
+  const handleSelectBill = useCallback((bill: Bill & { id: string }) => {
+    tapFeedback(); // opening the bill detail sheet
+    setSelectedBillId(bill.id);
+  }, []);
+
+  const handleGenerate = useCallback(
+    async (order: Order & { id: string }) => {
     if (generatingId) return;
     mediumTapFeedback(); // weighty tap kicking off billing
     setGeneratingId(order.id);
@@ -138,14 +146,17 @@ export function BillsScreen() {
     } finally {
       setGeneratingId(null);
     }
-  }
+    },
+    [generatingId, cashierUid, orderLabel, gstEnabled]
+  );
 
   /**
    * Discard a stuck "Preparing…" order. Confirmed first, and worded to match
    * how far it actually got: a partly-fired order means food may already be on
    * the pass, so the cashier is told that before they discard it.
    */
-  function handleCancelPreparing(order: Order & { id: string }) {
+  const handleCancelPreparing = useCallback(
+    (order: Order & { id: string }) => {
     if (cancellingId) return;
     const fired = order.items.some(
       (i) => !i.voided && i.qty > 0 && i.kotStatus !== "pending"
@@ -180,7 +191,49 @@ export function BillsScreen() {
         },
       ]
     );
-  }
+    },
+    [cancellingId, orderLabel]
+  );
+
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: { title: string } }) => (
+      <Text style={styles.sectionHeader}>{section.title}</Text>
+    ),
+    []
+  );
+
+  // Stable identity so the memo() on the three cards actually holds — this
+  // list re-renders on every bill, order and KOT snapshot.
+  const renderRow = useCallback(
+    ({ item }: { item: Row }) =>
+      item.kind === "bill" ? (
+        <BillCard bill={item.bill} onPress={handleSelectBill} />
+      ) : item.kind === "order" ? (
+        <OrderCard
+          order={item.order}
+          label={orderLabel(item.order)}
+          busy={generatingId === item.order.id}
+          disabled={generatingId !== null}
+          onPress={handleGenerate}
+        />
+      ) : (
+        <PreparingCard
+          order={item.order}
+          label={orderLabel(item.order)}
+          busy={cancellingId === item.order.id}
+          disabled={cancellingId !== null}
+          onCancel={handleCancelPreparing}
+        />
+      ),
+    [
+      handleSelectBill,
+      orderLabel,
+      generatingId,
+      cancellingId,
+      handleGenerate,
+      handleCancelPreparing,
+    ]
+  );
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -216,41 +269,10 @@ export function BillsScreen() {
         stickySectionHeadersEnabled={false}
         contentContainerStyle={[
           styles.list,
-          { paddingBottom: insets.bottom + space.s6 },
+          { paddingBottom: tabBarClearance + space.s6 },
         ]}
-        renderSectionHeader={({ section }) => (
-          <Text style={styles.sectionHeader}>{section.title}</Text>
-        )}
-        renderItem={({ item }) =>
-          item.kind === "bill" ? (
-            <BillCard
-              bill={item.bill}
-              now={now}
-              onPress={() => {
-                tapFeedback(); // opening the bill detail sheet
-                setSelectedBillId(item.bill.id);
-              }}
-            />
-          ) : item.kind === "order" ? (
-            <OrderCard
-              order={item.order}
-              label={orderLabel(item.order)}
-              now={now}
-              busy={generatingId === item.order.id}
-              disabled={generatingId !== null}
-              onPress={() => handleGenerate(item.order)}
-            />
-          ) : (
-            <PreparingCard
-              order={item.order}
-              label={orderLabel(item.order)}
-              now={now}
-              busy={cancellingId === item.order.id}
-              disabled={cancellingId !== null}
-              onCancel={() => handleCancelPreparing(item.order)}
-            />
-          )
-        }
+        renderSectionHeader={renderSectionHeader}
+        renderItem={renderRow}
         ListEmptyComponent={
           <Text style={styles.empty}>No bills to settle right now.</Text>
         }
@@ -290,21 +312,19 @@ function statusMeta(status: Bill["status"]): { label: string; bg: string; fg: st
   }
 }
 
-function BillCard({
+const BillCard = memo(function BillCard({
   bill,
-  now,
   onPress,
 }: {
   bill: Bill & { id: string };
-  now: number;
-  onPress: () => void;
+  /** Takes the bill so the screen can pass ONE stable handler to every card. */
+  onPress: (bill: Bill & { id: string }) => void;
 }) {
   const meta = statusMeta(bill.status);
-  const createdMs = bill.createdAt?.toMillis() ?? null;
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-      onPress={onPress}
+      onPress={() => onPress(bill)}
     >
       <View style={styles.cardTop}>
         <Text style={styles.cardTitleText}>{bill.tableLabel}</Text>
@@ -314,30 +334,31 @@ function BillCard({
       </View>
       <View style={styles.cardBottom}>
         <Text style={styles.cardTotal}>{formatMoney(bill.grandTotal)}</Text>
-        {createdMs !== null && (
-          <Text style={styles.cardTime}>{timeAgo(createdMs, now)}</Text>
+        {bill.createdAt && (
+          <ElapsedTime
+            createdAt={bill.createdAt}
+            intervalMs={30_000}
+            style={styles.cardTime}
+          />
         )}
       </View>
     </Pressable>
   );
-}
+});
 
-function OrderCard({
+const OrderCard = memo(function OrderCard({
   order,
   label,
-  now,
   busy,
   disabled,
   onPress,
 }: {
   order: Order & { id: string };
   label: string;
-  now: number;
   busy: boolean;
   disabled: boolean;
-  onPress: () => void;
+  onPress: (order: Order & { id: string }) => void;
 }) {
-  const createdMs = order.createdAt?.toMillis() ?? null;
   return (
     <Pressable
       style={({ pressed }) => [
@@ -345,7 +366,7 @@ function OrderCard({
         disabled && !busy && styles.cardDim,
         pressed && styles.cardPressed,
       ]}
-      onPress={onPress}
+      onPress={() => onPress(order)}
       disabled={disabled}
     >
       <View style={styles.cardTop}>
@@ -360,34 +381,35 @@ function OrderCard({
       </View>
       <View style={styles.cardBottom}>
         <Text style={styles.cardTotal}>{formatMoney(order.subtotal)}</Text>
-        {createdMs !== null && (
-          <Text style={styles.cardTime}>{timeAgo(createdMs, now)}</Text>
+        {order.createdAt && (
+          <ElapsedTime
+            createdAt={order.createdAt}
+            intervalMs={30_000}
+            style={styles.cardTime}
+          />
         )}
       </View>
     </Pressable>
   );
-}
+});
 
 /** Kitchen still cooking: visible so the cashier knows the order exists, but
  *  greyed out and not billable until every ticket is completed (it then moves
  *  to "Ready to bill" automatically). Discard is the way out for one that will
  *  never get there — an abandoned counter order, or one only partly fired. */
-function PreparingCard({
+const PreparingCard = memo(function PreparingCard({
   order,
   label,
-  now,
   busy,
   disabled,
   onCancel,
 }: {
   order: Order & { id: string };
   label: string;
-  now: number;
   busy: boolean;
   disabled: boolean;
-  onCancel: () => void;
+  onCancel: (order: Order & { id: string }) => void;
 }) {
-  const createdMs = order.createdAt?.toMillis() ?? null;
   return (
     <View style={[styles.card, styles.cardDim]}>
       <View style={styles.cardTop}>
@@ -400,8 +422,12 @@ function PreparingCard({
       </View>
       <View style={styles.cardBottom}>
         <Text style={styles.cardTotal}>{formatMoney(order.subtotal)}</Text>
-        {createdMs !== null && (
-          <Text style={styles.cardTime}>{timeAgo(createdMs, now)}</Text>
+        {order.createdAt && (
+          <ElapsedTime
+            createdAt={order.createdAt}
+            intervalMs={30_000}
+            style={styles.cardTime}
+          />
         )}
       </View>
       <Pressable
@@ -409,7 +435,7 @@ function PreparingCard({
           styles.discardBtn,
           pressed && { opacity: 0.7 },
         ]}
-        onPress={onCancel}
+        onPress={() => onCancel(order)}
         disabled={disabled}
         hitSlop={8}
       >
@@ -421,7 +447,7 @@ function PreparingCard({
       </Pressable>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
@@ -442,18 +468,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  avatarText: { fontSize: 18, fontWeight: "700", color: colors.textInverse },
+  avatarText: { fontSize: 18, fontFamily: fonts.bold, color: colors.textInverse },
   headerText: { flex: 1 },
-  title: { fontSize: 24, fontWeight: "700", color: colors.text },
-  subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
+  title: { ...typography.screenTitle, color: colors.text },
+  subtitle: { ...typography.screenSubtitle, color: colors.textMuted, marginTop: 2 },
 
   list: { paddingHorizontal: space.s4 },
   sectionHeader: {
-    fontSize: 13,
-    fontWeight: "700",
+    ...typography.sectionLabel,
     color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
     marginTop: space.s4,
     marginBottom: space.s2,
   },
@@ -461,6 +484,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: colors.textMuted,
     padding: space.s6,
+    fontFamily: fonts.regular,
     fontSize: 14,
   },
 
@@ -474,21 +498,21 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   cardDim: { opacity: 0.6 },
-  cardPressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  cardPressed: { opacity: opacity.pressed, transform: [{ scale: 0.98 }] },
   cardTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  cardTitleText: { fontSize: 17, fontWeight: "700", color: colors.text },
+  cardTitleText: { fontSize: 17, fontFamily: fonts.bold, color: colors.text },
   cardBottom: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end",
     marginTop: space.s3,
   },
-  cardTotal: { fontSize: 18, fontWeight: "700", color: colors.text },
-  cardTime: { fontSize: 12, color: colors.textMuted },
+  cardTotal: { fontSize: 18, fontFamily: fonts.bold, color: colors.text },
+  cardTime: { fontFamily: fonts.regular, fontSize: 12, color: colors.textMuted },
 
   discardBtn: {
     alignSelf: "flex-start",
@@ -500,14 +524,14 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
-  discardBtnText: { fontSize: 13, fontWeight: "700", color: colors.danger },
+  discardBtnText: { fontSize: 13, fontFamily: fonts.bold, color: colors.danger },
 
   pill: {
     paddingHorizontal: space.s2,
     paddingVertical: 3,
     borderRadius: radius.pill,
   },
-  pillText: { fontSize: 11, fontWeight: "700" },
+  pillText: { fontSize: 11, fontFamily: fonts.bold },
 
   readyBtn: {
     backgroundColor: colors.primary,
@@ -517,5 +541,5 @@ const styles = StyleSheet.create({
     minWidth: 64,
     alignItems: "center",
   },
-  readyBtnText: { fontSize: 13, fontWeight: "700", color: colors.textInverse },
+  readyBtnText: { fontSize: 13, fontFamily: fonts.bold, color: colors.textInverse },
 });

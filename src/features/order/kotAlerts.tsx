@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { successFeedback } from "@/lib/feedback";
-import { colors, radius, shadow, space } from "@/theme/theme";
+import { colors, fonts, radius, shadow, space } from "@/theme/theme";
 import type { Kot } from "@/types/models";
 
 type LiveKot = Kot & { id: string };
@@ -158,6 +158,6 @@ const styles = StyleSheet.create({
   text: {
     color: colors.textInverse,
     fontSize: 14,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
   },
 });

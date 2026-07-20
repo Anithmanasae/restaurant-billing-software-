@@ -6,12 +6,14 @@ import { useSettings } from "@/features/settings/SettingsContext";
 import { ReceiptDetailsCard } from "@/features/settings/ReceiptDetailsCard";
 import { PrinterSettingsCard } from "@/features/settings/PrinterSettingsCard";
 import { useRestaurantProfile } from "@/features/settings/useRestaurantProfile";
-import { colors, space, radius, shadow } from "@/theme/theme";
+import { useTabBarClearance } from "@/lib/useTabBarClearance";
+import { colors, fonts, space, radius, shadow, typography, opacity } from "@/theme/theme";
 
 /** Signed-in user's profile, billing settings + sign out. */
 export default function AccountRoute() {
   const { profile, signOut, role } = useAuth();
   const { gstEnabled, setGstEnabled } = useSettings();
+  const tabBarClearance = useTabBarClearance();
   // Join code lives on the restaurant root doc; only fetched for the roles
   // that may share it.
   const canShareJoinCode = role === "cashier" || role === "admin";
@@ -31,7 +33,10 @@ export default function AccountRoute() {
   return (
     <SafeAreaView style={styles.root} edges={["top"]}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: tabBarClearance + space.s6 },
+        ]}
         showsVerticalScrollIndicator={false}
       >
       <Text style={styles.title}>Account</Text>
@@ -172,12 +177,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.bg,
   },
+  // paddingBottom is applied at the call site — it has to clear the tab bar.
   scrollContent: {
     padding: space.s6,
     gap: space.s5,
-    paddingBottom: space.s6 * 2,
   },
-  title: { fontSize: 28, fontWeight: "800", color: colors.text },
+  title: { ...typography.screenTitle, color: colors.text },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -186,9 +191,10 @@ const styles = StyleSheet.create({
     gap: space.s2,
     ...shadow.card,
   },
+  // Emoji: no fontFamily, the brand face has no glyphs for it.
   avatar: { fontSize: 48 },
-  name: { fontSize: 20, fontWeight: "700", color: colors.text },
-  email: { color: colors.textMuted },
+  name: { fontFamily: fonts.bold, fontSize: 20, color: colors.text },
+  email: { fontFamily: fonts.regular, fontSize: 14, color: colors.textMuted },
   roleBadge: {
     marginTop: space.s2,
     backgroundColor: colors.primarySoft,
@@ -196,7 +202,7 @@ const styles = StyleSheet.create({
     paddingVertical: space.s1,
     paddingHorizontal: space.s3,
   },
-  roleText: { color: colors.primary, fontWeight: "700", fontSize: 12 },
+  roleText: { color: colors.primary, fontFamily: fonts.bold, fontSize: 12 },
   settingsCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
@@ -204,13 +210,7 @@ const styles = StyleSheet.create({
     gap: space.s3,
     ...shadow.card,
   },
-  settingsTitle: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
+  settingsTitle: { ...typography.sectionLabel, color: colors.textMuted },
   settingRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -218,12 +218,12 @@ const styles = StyleSheet.create({
     gap: space.s3,
   },
   settingText: { flex: 1 },
-  settingLabel: { fontSize: 16, fontWeight: "600", color: colors.text },
-  settingHint: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  settingChevron: { fontSize: 24, color: colors.textMuted, fontWeight: "600" },
+  settingLabel: { fontSize: 16, fontFamily: fonts.semibold, color: colors.text },
+  settingHint: { fontFamily: fonts.regular, fontSize: 13, color: colors.textMuted, marginTop: 2 },
+  settingChevron: { fontSize: 24, color: colors.textMuted, fontFamily: fonts.semibold },
   joinCode: {
     fontSize: 32,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.primary,
     letterSpacing: 6,
     textAlign: "center",
@@ -238,6 +238,6 @@ const styles = StyleSheet.create({
     padding: space.s4,
     alignItems: "center",
   },
-  signOutText: { color: colors.danger, fontWeight: "700", fontSize: 16 },
-  pressed: { opacity: 0.7, transform: [{ scale: 0.98 }] },
+  signOutText: { color: colors.danger, fontFamily: fonts.bold, fontSize: 16 },
+  pressed: { opacity: opacity.pressed, transform: [{ scale: 0.98 }] },
 });

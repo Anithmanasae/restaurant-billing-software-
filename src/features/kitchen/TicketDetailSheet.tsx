@@ -22,7 +22,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors, radius, space } from "@/theme/theme";
+import { colors, fonts, radius, space } from "@/theme/theme";
 import { formatTimeIST } from "@/lib/date";
 import { animateNextLayout, tapFeedback } from "@/lib/feedback";
 import { ElapsedTime } from "@/components/ElapsedTime";
@@ -411,7 +411,7 @@ const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: colors.scrim,
   },
   backdropFill: {
     flex: 1,
@@ -446,7 +446,7 @@ const styles = StyleSheet.create({
   },
   tableLabel: {
     fontSize: 22,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.text,
   },
   plusBadge: {
@@ -457,18 +457,19 @@ const styles = StyleSheet.create({
   },
   plusBadgeText: {
     fontSize: 11,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.statusIndigo,
   },
   closeBtn: {
     padding: space.s1,
   },
+  // "✕" glyph — leave it on the system font.
   closeGlyph: {
     fontSize: 18,
     color: colors.textMuted,
-    fontWeight: "700",
   },
   subLine: {
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.textMuted,
     marginTop: space.s1,
@@ -497,7 +498,7 @@ const styles = StyleSheet.create({
   roundTitle: {
     flexShrink: 1,
     fontSize: 14,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.text,
   },
   pill: {
@@ -507,7 +508,7 @@ const styles = StyleSheet.create({
   },
   pillText: {
     fontSize: 10,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     letterSpacing: 0.4,
   },
   roundMeta: {
@@ -517,12 +518,13 @@ const styles = StyleSheet.create({
     gap: space.s2,
   },
   roundMetaText: {
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.textMuted,
   },
   reprint: {
     fontSize: 12,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.primary,
   },
   itemBlock: {
@@ -535,18 +537,19 @@ const styles = StyleSheet.create({
   },
   qty: {
     fontSize: 15,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.text,
     minWidth: 28,
   },
   itemName: {
     flex: 1,
+    fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.text,
   },
   voidTag: {
     fontSize: 10,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.danger,
   },
   removeBtn: {
@@ -557,11 +560,12 @@ const styles = StyleSheet.create({
   },
   removeText: {
     fontSize: 11,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.danger,
   },
   noteLine: {
     marginLeft: 28 + space.s2,
+    fontFamily: fonts.regular,
     fontSize: 13,
     color: colors.textMuted,
   },
@@ -598,7 +602,7 @@ const styles = StyleSheet.create({
   },
   actionText: {
     fontSize: 14,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.textMuted,
   },
   actionTextActive: {
@@ -611,7 +615,7 @@ const styles = StyleSheet.create({
   },
   completeText: {
     fontSize: 14,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.textInverse,
     letterSpacing: 0.3,
   },
@@ -622,7 +626,7 @@ const styles = StyleSheet.create({
   },
   doneText: {
     fontSize: 14,
-    fontWeight: "800",
+    fontFamily: fonts.extrabold,
     color: colors.statusGreen,
     letterSpacing: 0.3,
   },

@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTabBarClearance } from "@/lib/useTabBarClearance";
 import { query, where } from "firebase/firestore";
 import { router } from "expo-router";
 
@@ -27,7 +28,7 @@ import { formatMoney } from "@/lib/money";
 import { tapFeedback } from "@/lib/feedback";
 import { FadeSlideIn } from "@/components/FadeSlideIn";
 import { TableGridSkeleton } from "@/components/Skeleton";
-import { colors, fonts, radius, space } from "@/theme/theme";
+import { colors, fonts, radius, space, typography, opacity } from "@/theme/theme";
 import type { Kot, Order, OrderItem, Table, TableStatus } from "@/types/models";
 import { useAuth } from "@/features/auth/AuthContext";
 import { KotAlertBanner, useKotStatusAlerts } from "@/features/order/kotAlerts";
@@ -56,6 +57,7 @@ function tableName(t: Table): string {
 
 export function TablesScreen() {
   const insets = useSafeAreaInsets();
+  const tabBarClearance = useTabBarClearance();
   const { profile, firebaseUser } = useAuth();
   const waiterId = profile?.uid ?? firebaseUser?.uid ?? "";
   // Counter flow entry point: cashier/admin start a takeaway order (no table)
@@ -184,6 +186,21 @@ export function TablesScreen() {
     setSheet("actions");
   }, []);
 
+  // Stable identity — TableCard is memo()'d, but an inline renderItem makes
+  // VirtualizedList re-render every mounted cell on each tables/orders/kots
+  // snapshot, and this screen holds three live subscriptions.
+  const renderTable = useCallback(
+    ({ item }: { item: Table & { id: string } }) => (
+      <TableCard
+        table={item}
+        order={orderByTable.get(item.id) ?? null}
+        primary={item.mergedInto ? tableById.get(item.mergedInto) ?? null : null}
+        onPress={handleCardPress}
+      />
+    ),
+    [orderByTable, tableById, handleCardPress]
+  );
+
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -242,21 +259,16 @@ export function TablesScreen() {
             columnWrapperStyle={styles.column}
             contentContainerStyle={[
               styles.grid,
-              { paddingBottom: insets.bottom + space.s6 },
+              { paddingBottom: tabBarClearance + space.s6 },
             ]}
             ListEmptyComponent={
               <Text style={styles.empty}>No tables to show.</Text>
             }
-            renderItem={({ item }) => (
-              <TableCard
-                table={item}
-                order={orderByTable.get(item.id) ?? null}
-                primary={
-                  item.mergedInto ? tableById.get(item.mergedInto) ?? null : null
-                }
-                onPress={handleCardPress}
-              />
-            )}
+            renderItem={renderTable}
+            initialNumToRender={8}
+            maxToRenderPerBatch={8}
+            windowSize={5}
+            removeClippedSubviews
           />
         </FadeSlideIn>
       )}
@@ -688,12 +700,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.textInverse,
   },
-  title: {
-    fontFamily: fonts.extrabold,
-    fontSize: 34,
-    color: colors.text,
-    letterSpacing: -0.5,
-  },
+  title: { ...typography.screenTitle, color: colors.text },
   subtitle: {
     fontFamily: fonts.regular,
     fontSize: 15,
@@ -737,12 +744,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  pressed: { opacity: 0.7 },
+  pressed: { opacity: opacity.pressed },
 
   // Modal / sheets
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: colors.scrim,
     justifyContent: "flex-end",
   },
   sheet: {
@@ -777,7 +784,7 @@ const styles = StyleSheet.create({
   },
   actionPrimary: { backgroundColor: colors.primary },
   actionDanger: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.danger },
-  actionDisabled: { opacity: 0.45 },
+  actionDisabled: { opacity: opacity.disabled },
   actionText: { fontFamily: fonts.semibold, fontSize: 15, color: colors.text },
   actionTextPrimary: { color: colors.textInverse },
   actionTextDanger: { color: colors.danger },

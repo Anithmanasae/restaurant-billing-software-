@@ -10,11 +10,13 @@
     "typecheck": "tsc --noEmit",
     "seed": "node scripts/seed.js",
     "migrate": "node scripts/migrate.js",
+    "migrate:menu-images": "node scripts/migrateMenuImages.js",
     "compress-images": "node scripts/compressMenuImages.js"
   },
   "dependencies": {
     "@expo-google-fonts/plus-jakarta-sans": "^0.4.2",
     "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-navigation/bottom-tabs": "^7.18.5",
     "buffer": "^6.0.3",
     "expo": "~52.0.0",
     "expo-asset": "~11.0.5",

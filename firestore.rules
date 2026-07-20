@@ -272,6 +272,17 @@ service cloud.firestore {
           && request.resource.data.price >= 0;
         allow delete: if hasAnyRole(['admin', 'cashier']);
       }
+      // Menu photos, split out of the item docs so listing the menu doesn't
+      // download the whole photo library. Same id as the item, same audience:
+      // staff read, admin/cashier write. `dataUri` is a base64 data URI and a
+      // Firestore doc is capped at ~1 MiB, so the size bound is enforced by
+      // the platform; this only pins the shape.
+      match /menuItemImages/{itemId} {
+        allow read: if isActiveStaff();
+        allow create, update: if hasAnyRole(['admin', 'cashier'])
+          && request.resource.data.dataUri is string;
+        allow delete: if hasAnyRole(['admin', 'cashier']);
+      }
 
       // ---- tables --------------------------------------------------------
       // Floor staff read tables and update occupancy/merge/shift status.

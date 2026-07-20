@@ -139,11 +139,24 @@ export interface MenuItem {
   price: number;
   enabled: boolean;
   /**
-   * Item photo. New uploads store a compressed base64 `data:image/jpeg` URI
-   * inline (no Firebase Storage on the free plan); older docs may still hold
-   * an https URL. Both render the same via `resolveMenuImage`.
+   * LEGACY inline photo — a base64 `data:image/jpeg` URI (or, older still, an
+   * https URL) stored right in this document.
+   *
+   * Inlining base64 made every menu list subscription carry the entire photo
+   * library: ~55-135 KB per item, re-downloaded on every listener attach, for
+   * a screen that only needs names and prices. New photos go to
+   * `menuItemImages/{itemId}` instead and set {@link hasImage}.
+   *
+   * Kept readable so un-migrated docs still render — `useMenuImage` prefers
+   * this field when it is present. `scripts/migrateMenuImages.js` clears it.
    */
   imageUrl?: string;
+  /**
+   * True when this item's photo lives in `menuItemImages/{itemId}`. Lets a
+   * card know whether a photo exists WITHOUT paying to read the blob, so items
+   * with no photo cost zero extra reads.
+   */
+  hasImage?: boolean;
   description?: string;
   sku?: string;
   /**
@@ -152,6 +165,20 @@ export interface MenuItem {
    * render without a badge until edited.
    */
   dietType?: "veg" | "non-veg";
+}
+
+/**
+ * menuItemImages/{itemId} — one menu photo, split out of the item document.
+ *
+ * Same doc id as the item it belongs to, so a card can fetch its photo without
+ * a query. Read lazily and one-shot (never via onSnapshot): a photo changes
+ * only when someone edits the item, and paying to stream every blob live is
+ * exactly the cost this split removes.
+ */
+export interface MenuItemImage {
+  /** Compressed base64 `data:image/jpeg` URI. */
+  dataUri: string;
+  updatedAt: Ts;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -3,13 +3,13 @@
  *   - createMenuItem / updateMenuItem
  *
  * The photo is stored inside the Firestore document itself as a base64 data
- * URI in `imageUrl` (no Firebase Storage — that product requires the paid
+ * URI in `menuItemImages/{id}` (no Firebase Storage — that product requires the paid
  * Blaze plan). compressMenuImage shrinks the photo far below the 1 MiB
  * Firestore document limit before encoding.
  *
  * Price is entered in rupees (₹) and stored as paise via rupeesToPaise.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -26,9 +26,10 @@ import * as ImageManipulator from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { rupeesToPaise } from "@/lib/money";
-import { colors, radius, space } from "@/theme/theme";
+import { colors, fonts, radius, space } from "@/theme/theme";
 import type { MenuCategory, MenuItem } from "@/types/models";
 import { DietBadge } from "./DietBadge";
+import { useMenuImage } from "./menuImageStore";
 import {
   createMenuItem,
   updateMenuItem,
@@ -101,9 +102,6 @@ export function MenuItemForm({
   const [dietType, setDietType] = useState<MenuItem["dietType"]>(undefined);
   const [enabled, setEnabled] = useState(true);
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
-  const [existingImageUrl, setExistingImageUrl] = useState<string | undefined>(
-    undefined
-  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
@@ -131,7 +129,6 @@ export function MenuItemForm({
     setDietType(item ? item.dietType : "veg");
     setEnabled(item?.enabled ?? true);
     setLocalImageUri(null);
-    setExistingImageUrl(item?.imageUrl);
     setError(null);
     setSaving(false);
   }, [visible, item, defaultCategoryId]);
@@ -178,15 +175,18 @@ export function MenuItemForm({
         description: description.trim() || undefined,
         sku: sku.trim() || undefined,
         dietType,
-        // A newly picked photo is already a compressed base64 data URI, so it
-        // is saved inside the document like any other field.
-        imageUrl: localImageUri ?? existingImageUrl,
       };
 
+      // The photo travels separately now: it is written to
+      // menuItemImages/{id}, not stored on the item. `undefined` means "leave
+      // the stored photo alone", so an edit that didn't touch the picker
+      // doesn't rewrite (or re-download) the blob at all.
+      const photo = localImageUri ?? undefined;
+
       if (item) {
-        await updateMenuItem(item.id, base);
+        await updateMenuItem(item.id, base, photo);
       } else {
-        await createMenuItem(base);
+        await createMenuItem(base, photo);
       }
 
       onClose();
@@ -196,7 +196,19 @@ export function MenuItemForm({
     }
   };
 
-  const previewUri = localImageUri ?? existingImageUrl;
+  // The stored photo now lives in menuItemImages/{id}, so the preview resolves
+  // it through the same lazy hook the cards use. A freshly picked photo always
+  // wins — it hasn't been saved yet.
+  const storedSource = useMenuImage(
+    item ?? { id: "__new__", imageUrl: undefined, hasImage: false }
+  );
+  // Memoized so typing in the name/price fields doesn't hand expo-image a new
+  // source object (and a fresh base64 decode) on every keystroke.
+  const pickedSource = useMemo(
+    () => (localImageUri ? { uri: localImageUri } : undefined),
+    [localImageUri]
+  );
+  const previewSource = pickedSource ?? storedSource;
 
   return (
     <Modal
@@ -232,10 +244,10 @@ export function MenuItemForm({
               ]}
               onPress={pickImage}
             >
-              {previewUri ? (
+              {previewSource ? (
                 <Image
                   style={styles.imagePreview}
-                  source={{ uri: previewUri }}
+                  source={previewSource}
                   contentFit="cover"
                   transition={150}
                   cachePolicy="memory-disk"
@@ -247,7 +259,7 @@ export function MenuItemForm({
                 </View>
               )}
             </Pressable>
-            {previewUri ? (
+            {previewSource ? (
               <Pressable
                 hitSlop={8}
                 style={({ pressed }) => pressed && styles.pressed}
@@ -327,7 +339,7 @@ export function MenuItemForm({
                     <Text
                       style={[
                         styles.chipText,
-                        active && { color: tint, fontWeight: "700" },
+                        active && { color: tint, fontFamily: fonts.bold },
                       ]}
                     >
                       {t === "veg" ? "Veg" : "Non-Veg"}
@@ -417,7 +429,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
+    backgroundColor: colors.scrim,
     justifyContent: "flex-end",
   },
   sheet: {
@@ -436,9 +448,10 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 18,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
     color: colors.text,
   },
+  // "✕" glyph — leave it on the system font.
   close: {
     fontSize: 18,
     color: colors.textMuted,
@@ -470,10 +483,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: space.s1,
   },
+  // Emoji glyph — leave it on the system font.
   imageEmptyIcon: {
     fontSize: 28,
   },
   imageEmptyText: {
+    fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.textMuted,
   },
@@ -481,12 +496,12 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     color: colors.primary,
     fontSize: 13,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
     marginTop: space.s1,
   },
   label: {
     fontSize: 13,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
     color: colors.textMuted,
     marginTop: space.s2,
   },
@@ -497,6 +512,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     paddingHorizontal: space.s3,
     paddingVertical: space.s3,
+    fontFamily: fonts.regular,
     fontSize: 15,
     color: colors.text,
   },
@@ -527,14 +543,16 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   chipText: {
+    fontFamily: fonts.regular,
     fontSize: 13,
     color: colors.text,
   },
   chipTextActive: {
     color: colors.textInverse,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
   },
   help: {
+    fontFamily: fonts.regular,
     fontSize: 13,
     color: colors.textMuted,
   },
@@ -546,6 +564,7 @@ const styles = StyleSheet.create({
   },
   error: {
     color: colors.danger,
+    fontFamily: fonts.regular,
     fontSize: 13,
     marginTop: space.s2,
   },
@@ -568,7 +587,7 @@ const styles = StyleSheet.create({
   btnPrimaryText: {
     color: colors.textInverse,
     fontSize: 15,
-    fontWeight: "700",
+    fontFamily: fonts.bold,
   },
   btnGhost: {
     backgroundColor: colors.surface,
@@ -578,7 +597,7 @@ const styles = StyleSheet.create({
   btnGhostText: {
     color: colors.text,
     fontSize: 15,
-    fontWeight: "600",
+    fontFamily: fonts.semibold,
   },
   btnDisabled: {
     opacity: 0.6,
