@@ -302,7 +302,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.s4,
   },
   list: {
+    // Without flexShrink, a long category list grows past the sheet's
+    // maxHeight and the overflow is clipped instead of scrollable.
     flexGrow: 0,
+    flexShrink: 1,
   },
   listContent: {
     paddingHorizontal: space.s4,

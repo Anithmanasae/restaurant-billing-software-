@@ -1002,7 +1002,10 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   sheetScroll: {
+    // flexShrink defaults to 0 in RN, so a long line list would grow past the
+    // sheet's maxHeight and push the footer (Total / Send KOT) out of view.
     flexGrow: 0,
+    flexShrink: 1,
   },
   sheetFooter: {
     paddingTop: space.s3,

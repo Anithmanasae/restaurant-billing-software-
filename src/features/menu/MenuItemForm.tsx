@@ -457,7 +457,10 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   scroll: {
+    // Without flexShrink, a tall form grows past the sheet's maxHeight and
+    // pushes the footer buttons out of view (RN defaults flexShrink to 0).
     flexGrow: 0,
+    flexShrink: 1,
   },
   scrollContent: {
     padding: space.s4,

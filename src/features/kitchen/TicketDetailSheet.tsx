@@ -476,7 +476,10 @@ const styles = StyleSheet.create({
     marginBottom: space.s2,
   },
   scroll: {
+    // Without flexShrink, a long ticket grows past the sheet's maxHeight and
+    // pushes the footer actions out of view (RN defaults flexShrink to 0).
     flexGrow: 0,
+    flexShrink: 1,
   },
   round: {
     borderTopWidth: 1,
