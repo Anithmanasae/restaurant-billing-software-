@@ -3,8 +3,8 @@
  *
  * Shows everything the kitchen needs for one table that the compact card
  * truncates: every round (first + additional) with its ticket number, status
- * pill, fire time, elapsed and reprint, the FULL item list with notes and
- * voided lines, and the same Start / Ready / Completed group actions.
+ * pill, fire time, elapsed and reprint count, the FULL item list with notes
+ * and voided lines, and the same Start / Ready / Completed group actions.
  *
  * CASHIER ONLY: each un-voided line on an active ticket also gets a Remove
  * button — when the kitchen or a waiter asks for an item to come off a fired
@@ -177,27 +177,14 @@ export function TicketDetailSheet({
     );
   }, []);
 
-  const onReprint = useCallback(
-    (kot: LiveKot) => {
-      if (printingId) return;
-      if (!isPrintingAvailable()) {
-        Alert.alert("Printing unavailable", PRINTING_UNAVAILABLE_MESSAGE);
-        return;
-      }
-      tapFeedback();
-      setPrintingId(kot.id);
-      void printOneKot(kot)
-        .catch(printFailed)
-        .finally(() => setPrintingId(null));
-    },
-    [printingId, printFailed, printOneKot]
-  );
-
   // Cashier's ⋮ → Reprint: every round of this table, oldest first, one ticket
   // per round (each KOT keeps its own number, so they can't be merged into one
   // slip). Stops at the first failure — a half-printed run is reported rather
   // than silently continued.
   const [menuOpen, setMenuOpen] = useState(false);
+  // Where the dropdown hangs: measured off the bottom of the ⋮'s own row, so
+  // it follows the header however the table label + badge wrap.
+  const [menuTop, setMenuTop] = useState(72);
 
   const onReprintAll = useCallback(() => {
     setMenuOpen(false);
@@ -237,42 +224,50 @@ export function TicketDetailSheet({
                 </View>
               )}
             </View>
-            <View style={styles.headerRight}>
-              {isCashier && (
-                <Pressable
-                  onPress={() => {
-                    tapFeedback();
-                    setMenuOpen((v) => !v);
-                  }}
-                  hitSlop={10}
-                  accessibilityRole="button"
-                  accessibilityLabel="Ticket options"
-                  style={({ pressed }) => [
-                    styles.closeBtn,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={styles.kebabGlyph}>⋮</Text>
-                </Pressable>
-              )}
+            <Pressable
+              onPress={onClose}
+              hitSlop={10}
+              style={({ pressed }) => [styles.closeBtn, pressed && styles.pressed]}
+            >
+              <Text style={styles.closeGlyph}>✕</Text>
+            </Pressable>
+          </View>
+
+          {/* The ⋮ lives a row BELOW the ✕, not beside it: side by side their
+              touch targets touch, and a slip either dismisses the sheet or
+              pops the menu. Down here it also lines up with the per-round
+              Reprint links, so every action sits in the same right column. */}
+          <View
+            style={styles.subRow}
+            onLayout={(e) =>
+              setMenuTop(e.nativeEvent.layout.y + e.nativeEvent.layout.height)
+            }
+          >
+            <Text style={styles.subLine}>
+              {orderTypeLabel(first.orderType)} · first order{" "}
+              {first.createdAt ? formatTimeIST(first.createdAt.toDate()) : "—"} ·{" "}
+              <ElapsedTime createdAt={first.createdAt} /> · {totalItems}{" "}
+              {totalItems === 1 ? "item" : "items"}
+            </Text>
+            {isCashier && (
               <Pressable
-                onPress={onClose}
-                hitSlop={10}
+                onPress={() => {
+                  tapFeedback();
+                  setMenuOpen((v) => !v);
+                }}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Ticket options"
                 style={({ pressed }) => [
-                  styles.closeBtn,
+                  styles.kebabBtn,
+                  menuOpen && styles.kebabBtnOpen,
                   pressed && styles.pressed,
                 ]}
               >
-                <Text style={styles.closeGlyph}>✕</Text>
+                <Text style={styles.kebabGlyph}>⋮</Text>
               </Pressable>
-            </View>
+            )}
           </View>
-          <Text style={styles.subLine}>
-            {orderTypeLabel(first.orderType)} · first order{" "}
-            {first.createdAt ? formatTimeIST(first.createdAt.toDate()) : "—"} ·{" "}
-            <ElapsedTime createdAt={first.createdAt} /> · {totalItems}{" "}
-            {totalItems === 1 ? "item" : "items"}
-          </Text>
 
           {/* ── Rounds ─────────────────────────────────────────────────── */}
           <ScrollView
@@ -284,8 +279,6 @@ export function TicketDetailSheet({
                 key={t.id}
                 kot={t}
                 round={round}
-                printing={printingId === t.id || printingId === ALL_ROUNDS}
-                onReprint={onReprint}
                 onRemoveItem={isCashier ? onRemoveItem : undefined}
                 removingLineId={removingLineId}
               />
@@ -352,7 +345,7 @@ export function TicketDetailSheet({
                 style={StyleSheet.absoluteFill}
                 onPress={() => setMenuOpen(false)}
               />
-              <View style={styles.menu}>
+              <View style={[styles.menu, { top: menuTop }]}>
                 <Pressable
                   onPress={onReprintAll}
                   disabled={printingId !== null}
@@ -383,15 +376,11 @@ export function TicketDetailSheet({
 function RoundSection({
   kot,
   round,
-  printing,
-  onReprint,
   onRemoveItem,
   removingLineId,
 }: {
   kot: LiveKot;
   round: number;
-  printing: boolean;
-  onReprint: (kot: LiveKot) => void;
   /** Present only for the cashier — everyone else never sees Remove. */
   onRemoveItem?: (kot: LiveKot, item: KotItem) => void;
   removingLineId: string | null;
@@ -411,25 +400,12 @@ function RoundSection({
           </Text>
         </View>
       </View>
-      <View style={styles.roundMeta}>
-        <Text style={styles.roundMetaText}>
-          {kot.createdAt ? formatTimeIST(kot.createdAt.toDate()) : "—"} ·{" "}
-          <ElapsedTime createdAt={kot.createdAt} /> · {count}{" "}
-          {count === 1 ? "item" : "items"}
-        </Text>
-        <Pressable
-          hitSlop={8}
-          style={({ pressed }) => pressed && styles.pressed}
-          onPress={() => onReprint(kot)}
-          disabled={printing}
-        >
-          <Text style={styles.reprint}>
-            {printing
-              ? "Printing…"
-              : `Reprint${kot.printedCount ? ` (${kot.printedCount})` : ""}`}
-          </Text>
-        </Pressable>
-      </View>
+      <Text style={styles.roundMetaText}>
+        {kot.createdAt ? formatTimeIST(kot.createdAt.toDate()) : "—"} ·{" "}
+        <ElapsedTime createdAt={kot.createdAt} /> · {count}{" "}
+        {count === 1 ? "item" : "items"}
+        {kot.printedCount ? ` · printed ${kot.printedCount}×` : ""}
+      </Text>
       {kot.items.map((item) => (
         <ItemLine
           key={item.lineId}
@@ -547,11 +523,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.extrabold,
     color: colors.statusIndigo,
   },
-  headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: space.s1,
-  },
   closeBtn: {
     padding: space.s1,
   },
@@ -560,15 +531,23 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: colors.textMuted,
   },
+  kebabBtn: {
+    paddingHorizontal: space.s2,
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
+  kebabBtnOpen: {
+    backgroundColor: colors.surfaceMuted,
+  },
   kebabGlyph: {
-    fontSize: 22,
-    lineHeight: 22,
+    fontSize: 20,
+    lineHeight: 20,
     color: colors.textMuted,
   },
-  // Anchored under the ⋮ in the header; sits above the sheet's own content.
+  // Anchored under the ⋮'s row (top set at runtime from onLayout); sits above
+  // the sheet's own content.
   menu: {
     position: "absolute",
-    top: space.s4 + 32,
     right: space.s4,
     minWidth: 180,
     backgroundColor: colors.surface,
@@ -593,12 +572,18 @@ const styles = StyleSheet.create({
     fontFamily: fonts.regular,
     color: colors.textMuted,
   },
+  subRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.s2,
+    marginTop: space.s1,
+    marginBottom: space.s2,
+  },
   subLine: {
+    flex: 1,
     fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.textMuted,
-    marginTop: space.s1,
-    marginBottom: space.s2,
   },
   scroll: {
     // Without flexShrink, a long ticket grows past the sheet's maxHeight and
@@ -639,21 +624,10 @@ const styles = StyleSheet.create({
     fontFamily: fonts.extrabold,
     letterSpacing: 0.4,
   },
-  roundMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: space.s2,
-  },
   roundMetaText: {
     fontFamily: fonts.regular,
     fontSize: 12,
     color: colors.textMuted,
-  },
-  reprint: {
-    fontSize: 12,
-    fontFamily: fonts.bold,
-    color: colors.primary,
   },
   itemBlock: {
     gap: 2,
