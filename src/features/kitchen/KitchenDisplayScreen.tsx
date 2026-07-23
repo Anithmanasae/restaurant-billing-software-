@@ -199,7 +199,7 @@ export function KitchenDisplayScreen() {
         <StatusTab
           label="TAKEAWAY"
           count={takeawayGroups.length}
-          color={colors.statusBlue}
+          color={colors.statusOrange}
           active={tab === "takeaway"}
           onPress={() => setTab("takeaway")}
         />

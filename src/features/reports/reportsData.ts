@@ -44,13 +44,25 @@ function rangeEndingAt(end: Date, days: number): DateRange {
   return { start: keys[0], end: keys[keys.length - 1], keys };
 }
 
-/** Number of days each range kind spans. */
-export function rangeLength(kind: RangeKind): number {
+/** Day of week (0 = Sunday) for a yyyy-mm-dd key, parsed as UTC (tz-safe). */
+function dayOfWeek(key: string): number {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+/**
+ * Number of days each range kind spans, ending today.
+ *
+ * "Week" is the calendar week starting Sunday, so it grows from 1 day (on a
+ * Sunday) to 7 (on a Saturday) — a week-to-date, never including days that
+ * haven't happened yet.
+ */
+export function rangeLength(kind: RangeKind, now: Date = new Date()): number {
   switch (kind) {
     case "today":
       return 1;
     case "week":
-      return 7;
+      return dayOfWeek(dayKey(now)) + 1;
     case "month":
       return 30;
   }
@@ -58,17 +70,18 @@ export function rangeLength(kind: RangeKind): number {
 
 /** The current range for the selected kind, ending today. */
 export function currentRange(kind: RangeKind, now: Date = new Date()): DateRange {
-  return rangeEndingAt(now, rangeLength(kind));
+  return rangeEndingAt(now, rangeLength(kind, now));
 }
 
 /**
- * The previous equivalent period (immediately before the current range),
- * used for delta comparisons. For a 7-day week ending today, this is the
- * 7 days before the current range's start.
+ * The previous equivalent period, used for delta comparisons. For "week" this
+ * is the same span of days in the previous calendar week (Sunday-anchored), so
+ * a Wednesday compares Sun–Wed against last Sun–Wed rather than a full week.
  */
 export function previousRange(kind: RangeKind, now: Date = new Date()): DateRange {
-  const len = rangeLength(kind);
-  const prevEnd = new Date(now.getTime() - len * DAY_MS);
+  const len = rangeLength(kind, now);
+  const shift = kind === "week" ? 7 : len;
+  const prevEnd = new Date(now.getTime() - shift * DAY_MS);
   return rangeEndingAt(prevEnd, len);
 }
 

@@ -9,7 +9,9 @@
  * CASHIER ONLY: each un-voided line on an active ticket also gets a Remove
  * button — when the kitchen or a waiter asks for an item to come off a fired
  * order, only the cashier can void it (struck through on the ticket, dropped
- * from the bill). No other role ever sees the button.
+ * from the bill). No other role ever sees the button. The cashier also gets a
+ * ⋮ menu in the header whose Reprint re-fires EVERY round in one go, for when
+ * the whole ticket has to be put back on the pass.
  */
 import { useCallback, useState } from "react";
 import {
@@ -22,7 +24,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { colors, fonts, radius, space } from "@/theme/theme";
+import { colors, fonts, radius, shadow, space } from "@/theme/theme";
 import { formatTimeIST } from "@/lib/date";
 import { animateNextLayout, tapFeedback } from "@/lib/feedback";
 import { ElapsedTime } from "@/components/ElapsedTime";
@@ -76,6 +78,9 @@ function orderTypeLabel(t: Kot["orderType"]): string {
   }
 }
 
+/** Sentinel for `printingId` while the whole ticket is being re-fired. */
+const ALL_ROUNDS = "__all__";
+
 function itemCount(kot: LiveKot): number {
   return kot.items.reduce((n, it) => (it.voided ? n : n + it.qty), 0);
 }
@@ -115,7 +120,7 @@ export function TicketDetailSheet({
   // cashier to take a line off a fired ticket. (Rules enforce this server-side
   // too — only a cashier may write `items` on a kot.)
   const { role } = useAuth();
-  const canRemoveItems = role === "cashier";
+  const isCashier = role === "cashier";
   const [removingLineId, setRemovingLineId] = useState<string | null>(null);
 
   const onRemoveItem = useCallback((kot: LiveKot, item: KotItem) => {
@@ -150,6 +155,28 @@ export function TicketDetailSheet({
   const { data: restaurant } = useRestaurantProfile();
   const [printingId, setPrintingId] = useState<string | null>(null);
 
+  const printOneKot = useCallback(
+    async (kot: LiveKot) => {
+      const paperWidth = await getPaperWidth();
+      const ticket = encodeKot({
+        profile: restaurant ?? { name: "SADA POS" },
+        kot,
+        paperWidth,
+      });
+      await printToSavedPrinter(ticket.bytes);
+      await reprintKot(kot); // bytes accepted → count the print
+    },
+    [restaurant]
+  );
+
+  const printFailed = useCallback((e: unknown) => {
+    Alert.alert(
+      "Couldn’t print",
+      (e instanceof Error ? e.message : String(e)) +
+        "\n\nCheck Account > Printer Settings."
+    );
+  }, []);
+
   const onReprint = useCallback(
     (kot: LiveKot) => {
       if (printingId) return;
@@ -159,29 +186,38 @@ export function TicketDetailSheet({
       }
       tapFeedback();
       setPrintingId(kot.id);
-      void (async () => {
-        try {
-          const paperWidth = await getPaperWidth();
-          const ticket = encodeKot({
-            profile: restaurant ?? { name: "SADA POS" },
-            kot,
-            paperWidth,
-          });
-          await printToSavedPrinter(ticket.bytes);
-          await reprintKot(kot); // bytes accepted → count the print
-        } catch (e) {
-          Alert.alert(
-            "Couldn’t print",
-            (e instanceof Error ? e.message : String(e)) +
-              "\n\nCheck Account > Printer Settings."
-          );
-        } finally {
-          setPrintingId(null);
-        }
-      })();
+      void printOneKot(kot)
+        .catch(printFailed)
+        .finally(() => setPrintingId(null));
     },
-    [printingId, restaurant]
+    [printingId, printFailed, printOneKot]
   );
+
+  // Cashier's ⋮ → Reprint: every round of this table, oldest first, one ticket
+  // per round (each KOT keeps its own number, so they can't be merged into one
+  // slip). Stops at the first failure — a half-printed run is reported rather
+  // than silently continued.
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const onReprintAll = useCallback(() => {
+    setMenuOpen(false);
+    if (printingId) return;
+    if (!isPrintingAvailable()) {
+      Alert.alert("Printing unavailable", PRINTING_UNAVAILABLE_MESSAGE);
+      return;
+    }
+    tapFeedback();
+    setPrintingId(ALL_ROUNDS);
+    void (async () => {
+      try {
+        for (const kot of group.tickets) await printOneKot(kot);
+      } catch (e) {
+        printFailed(e);
+      } finally {
+        setPrintingId(null);
+      }
+    })();
+  }, [group.tickets, printingId, printFailed, printOneKot]);
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
@@ -201,13 +237,35 @@ export function TicketDetailSheet({
                 </View>
               )}
             </View>
-            <Pressable
-              onPress={onClose}
-              hitSlop={10}
-              style={({ pressed }) => [styles.closeBtn, pressed && styles.pressed]}
-            >
-              <Text style={styles.closeGlyph}>✕</Text>
-            </Pressable>
+            <View style={styles.headerRight}>
+              {isCashier && (
+                <Pressable
+                  onPress={() => {
+                    tapFeedback();
+                    setMenuOpen((v) => !v);
+                  }}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ticket options"
+                  style={({ pressed }) => [
+                    styles.closeBtn,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={styles.kebabGlyph}>⋮</Text>
+                </Pressable>
+              )}
+              <Pressable
+                onPress={onClose}
+                hitSlop={10}
+                style={({ pressed }) => [
+                  styles.closeBtn,
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={styles.closeGlyph}>✕</Text>
+              </Pressable>
+            </View>
           </View>
           <Text style={styles.subLine}>
             {orderTypeLabel(first.orderType)} · first order{" "}
@@ -226,9 +284,9 @@ export function TicketDetailSheet({
                 key={t.id}
                 kot={t}
                 round={round}
-                printing={printingId === t.id}
+                printing={printingId === t.id || printingId === ALL_ROUNDS}
                 onReprint={onReprint}
-                onRemoveItem={canRemoveItems ? onRemoveItem : undefined}
+                onRemoveItem={isCashier ? onRemoveItem : undefined}
                 removingLineId={removingLineId}
               />
             ))}
@@ -286,6 +344,35 @@ export function TicketDetailSheet({
               </Pressable>
             )}
           </View>
+
+          {/* ── Cashier ⋮ menu (overlays the sheet; tap outside to close) ── */}
+          {menuOpen && (
+            <>
+              <Pressable
+                style={StyleSheet.absoluteFill}
+                onPress={() => setMenuOpen(false)}
+              />
+              <View style={styles.menu}>
+                <Pressable
+                  onPress={onReprintAll}
+                  disabled={printingId !== null}
+                  style={({ pressed }) => [
+                    styles.menuItem,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={styles.menuItemText}>
+                    {printingId === ALL_ROUNDS ? "Printing…" : "Reprint"}
+                  </Text>
+                  <Text style={styles.menuItemHint}>
+                    {group.tickets.length === 1
+                      ? "The whole ticket"
+                      : `All ${group.tickets.length} rounds`}
+                  </Text>
+                </Pressable>
+              </View>
+            </>
+          )}
         </View>
       </View>
     </Modal>
@@ -460,12 +547,50 @@ const styles = StyleSheet.create({
     fontFamily: fonts.extrabold,
     color: colors.statusIndigo,
   },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space.s1,
+  },
   closeBtn: {
     padding: space.s1,
   },
-  // "✕" glyph — leave it on the system font.
+  // "✕" / "⋮" glyphs — leave them on the system font.
   closeGlyph: {
     fontSize: 18,
+    color: colors.textMuted,
+  },
+  kebabGlyph: {
+    fontSize: 22,
+    lineHeight: 22,
+    color: colors.textMuted,
+  },
+  // Anchored under the ⋮ in the header; sits above the sheet's own content.
+  menu: {
+    position: "absolute",
+    top: space.s4 + 32,
+    right: space.s4,
+    minWidth: 180,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: space.s1,
+    ...shadow.float,
+  },
+  menuItem: {
+    paddingHorizontal: space.s3,
+    paddingVertical: space.s2,
+    gap: 2,
+  },
+  menuItemText: {
+    fontSize: 15,
+    fontFamily: fonts.extrabold,
+    color: colors.primary,
+  },
+  menuItemHint: {
+    fontSize: 11,
+    fontFamily: fonts.regular,
     color: colors.textMuted,
   },
   subLine: {

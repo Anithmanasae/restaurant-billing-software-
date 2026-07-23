@@ -49,8 +49,10 @@ export const colors = {
   statusIndigoSoft: "#e9eafc",
   statusGreen: "#2E7D32",
   statusGreenSoft: "#e4f5ec",
-  statusBlue: "#1565C0", // takeaway/counter orders
+  statusBlue: "#1565C0", // counter orders
   statusBlueSoft: "#e7f0fb",
+  statusOrange: "#C05600", // takeaway (AA on white/soft backgrounds)
+  statusOrangeSoft: "#fdefe3",
 } as const;
 
 /** 4px spacing scale. */

@@ -24,6 +24,8 @@ const HEIGHT = 160;
 const PAD_TOP = space.s3;
 const PAD_BOTTOM = space.s3;
 const PAD_X = space.s2;
+/** Wide enough for "Wed" on one line — narrower labels wrap and overlap. */
+const LABEL_W = 36;
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -76,6 +78,11 @@ export function RevenueChart({ points }: RevenueChartProps) {
   const maxLabels = 7;
   const step = Math.max(1, Math.ceil(n / maxLabels));
 
+  // Centre each label on its point, but keep it inside the chart so the first
+  // and last labels don't spill past the card edge.
+  const labelLeft = (i: number) =>
+    Math.min(Math.max(xFor(i) - LABEL_W / 2, 0), Math.max(width - LABEL_W, 0));
+
   return (
     <View onLayout={onLayout}>
       <View style={styles.chartArea}>
@@ -121,7 +128,11 @@ export function RevenueChart({ points }: RevenueChartProps) {
       <View style={styles.labelsRow}>
         {points.map((p, i) =>
           i % step === 0 || i === n - 1 ? (
-            <Text key={p.date} style={[styles.axisLabel, { left: xFor(i) }]}>
+            <Text
+              key={p.date}
+              numberOfLines={1}
+              style={[styles.axisLabel, { left: labelLeft(i) }]}
+            >
               {weekdayLabel(p.date)}
             </Text>
           ) : null
@@ -154,20 +165,20 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   labelsRow: {
-    height: 16,
+    height: 18,
     marginTop: space.s1,
     position: "relative",
   },
   axisLabel: {
     position: "absolute",
     fontSize: 11,
+    lineHeight: 16,
     color: colors.textMuted,
-    transform: [{ translateX: -12 }],
-    width: 24,
+    width: LABEL_W,
     textAlign: "center",
   },
   peakCaption: {
-    marginTop: space.s1,
+    marginTop: space.s2,
     fontFamily: fonts.regular,
     fontSize: 11,
     color: colors.textMuted,
