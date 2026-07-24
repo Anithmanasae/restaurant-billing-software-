@@ -27,6 +27,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -106,6 +107,7 @@ function kotToLineStatus(status: KotStatus): KotItemStatus {
 
 export function OrderScreen({ tableId }: { tableId?: string }) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const tabBarClearance = useTabBarClearance();
   const { profile, role } = useAuth();
   const { gstEnabled } = useSettings();
@@ -172,6 +174,25 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [billId, setBillId] = useState<string | null>(null);
+
+  // ── Order-sheet layout budget ─────────────────────────────────────────────
+  // The Send-KOT footer MUST stay on screen no matter how many lines the order
+  // has. Relying on the sheet's `maxHeight` + the scroll view's `flexShrink`
+  // (the old fix) is not reliable here: this screen fires LayoutAnimation on
+  // every add/remove, and on Android an animation pass can leave the scroll
+  // view's measured content height stale, so Yoga stops shrinking it and the
+  // footer gets pushed off the bottom. Instead we give the scroll body an
+  // explicit height budget = sheet height − the measured chrome (drag handle +
+  // header + footer + the sheet's own vertical padding). An explicit maxHeight
+  // is honoured on every layout pass, animation or not. Seeded with rough
+  // guesses so the first frame is close; the onLayouts below make it exact.
+  const [sheetTopChrome, setSheetTopChrome] = useState(64);
+  const [sheetFooterH, setSheetFooterH] = useState(200);
+  const sheetVerticalPadding = space.s3 + insets.bottom + space.s3;
+  const sheetScrollMaxHeight = Math.max(
+    120,
+    windowHeight * 0.8 - sheetTopChrome - sheetFooterH - sheetVerticalPadding
+  );
 
   // A billed order is locked: adding/editing lines would desync the bill.
   const orderLocked = !!order?.billId;
@@ -662,22 +683,28 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
             onPress={() => setSheetOpen(false)}
           />
           <View style={[styles.sheet, { paddingBottom: insets.bottom + space.s3 }]}>
-            {/* Swipe affordance */}
-            <View style={styles.dragHandle} />
+            {/* Handle + header are the sheet's fixed top chrome — measured so
+                the scroll body below can be given an exact height budget. */}
+            <View
+              onLayout={(e) => setSheetTopChrome(e.nativeEvent.layout.height)}
+            >
+              {/* Swipe affordance */}
+              <View style={styles.dragHandle} />
 
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Current Order</Text>
-              <Pressable
-                hitSlop={8}
-                style={({ pressed }) => pressed && styles.pressed}
-                onPress={() => setSheetOpen(false)}
-              >
-                <Text style={styles.addItemsLink}>＋ Add Items</Text>
-              </Pressable>
+              <View style={styles.sheetHeader}>
+                <Text style={styles.sheetTitle}>Current Order</Text>
+                <Pressable
+                  hitSlop={8}
+                  style={({ pressed }) => pressed && styles.pressed}
+                  onPress={() => setSheetOpen(false)}
+                >
+                  <Text style={styles.addItemsLink}>＋ Add Items</Text>
+                </Pressable>
+              </View>
             </View>
 
             <ScrollView
-              style={styles.sheetScroll}
+              style={[styles.sheetScroll, { maxHeight: sheetScrollMaxHeight }]}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
@@ -702,7 +729,10 @@ export function OrderScreen({ tableId }: { tableId?: string }) {
               )}
             </ScrollView>
 
-            <View style={styles.sheetFooter}>
+            <View
+              style={styles.sheetFooter}
+              onLayout={(e) => setSheetFooterH(e.nativeEvent.layout.height)}
+            >
               <View style={styles.totalRow}>
                 <Text style={styles.totalLabel}>Total</Text>
                 <Text style={styles.totalValue}>{formatMoney(subtotal)}</Text>
@@ -1002,8 +1032,10 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
   sheetScroll: {
-    // flexShrink defaults to 0 in RN, so a long line list would grow past the
-    // sheet's maxHeight and push the footer (Total / Send KOT) out of view.
+    // The scroll body is primarily bounded by an explicit maxHeight budget set
+    // inline (see `sheetScrollMaxHeight`) so the footer can never be pushed off
+    // screen. These flex rules are a secondary guard: flexShrink defaults to 0
+    // in RN, which on its own would let a long list grow past the budget.
     flexGrow: 0,
     flexShrink: 1,
   },

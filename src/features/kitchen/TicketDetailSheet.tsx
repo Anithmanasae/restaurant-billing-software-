@@ -6,6 +6,11 @@
  * pill, fire time, elapsed and reprint count, the FULL item list with notes
  * and voided lines, and the same Start / Ready / Completed group actions.
  *
+ * KITCHEN ONLY: each un-voided line on an active ticket gets a Prepared toggle
+ * — red until the dish is up, green once tapped — so a big order can be
+ * gathered onto the tray dish-by-dish as each item comes off the pass. It only
+ * flips `preparedLineIds` on the ticket; it never touches items or the bill.
+ *
  * CASHIER ONLY: each un-voided line on an active ticket also gets a Remove
  * button — when the kitchen or a waiter asks for an item to come off a fired
  * order, only the cashier can void it (struck through on the ticket, dropped
@@ -38,7 +43,7 @@ import {
 } from "@/lib/printer/printerService";
 import { useAuth } from "@/features/auth/AuthContext";
 import type { Kot, KotItem, KotStatus } from "@/types/models";
-import { reprintKot, voidKotItem } from "./kdsApi";
+import { reprintKot, setLinePrepared, voidKotItem } from "./kdsApi";
 import { completeGroup, readyGroup, startGroup } from "./groupActions";
 import {
   additionalItemCount,
@@ -121,7 +126,23 @@ export function TicketDetailSheet({
   // too — only a cashier may write `items` on a kot.)
   const { role } = useAuth();
   const isCashier = role === "cashier";
+  const isKitchen = role === "kitchen";
   const [removingLineId, setRemovingLineId] = useState<string | null>(null);
+
+  // Kitchen ticks each line off as it comes up on the pass, so a big order can
+  // be gathered onto the tray dish-by-dish. Fire-and-forget: the button reflects
+  // the live `preparedLineIds` on the ticket, so a failed write simply snaps the
+  // line back to red. Kitchen only — the write path is gated in firestore.rules.
+  const onTogglePrepared = useCallback((kot: LiveKot, item: KotItem) => {
+    tapFeedback();
+    const next = !(kot.preparedLineIds ?? []).includes(item.lineId);
+    setLinePrepared(kot.id, item.lineId, next).catch((e) =>
+      Alert.alert(
+        "Couldn’t update line",
+        e instanceof Error ? e.message : String(e)
+      )
+    );
+  }, []);
 
   const onRemoveItem = useCallback((kot: LiveKot, item: KotItem) => {
     Alert.alert(
@@ -281,6 +302,7 @@ export function TicketDetailSheet({
                 round={round}
                 onRemoveItem={isCashier ? onRemoveItem : undefined}
                 removingLineId={removingLineId}
+                onTogglePrepared={isKitchen ? onTogglePrepared : undefined}
               />
             ))}
           </ScrollView>
@@ -378,15 +400,21 @@ function RoundSection({
   round,
   onRemoveItem,
   removingLineId,
+  onTogglePrepared,
 }: {
   kot: LiveKot;
   round: number;
   /** Present only for the cashier — everyone else never sees Remove. */
   onRemoveItem?: (kot: LiveKot, item: KotItem) => void;
   removingLineId: string | null;
+  /** Present only for the kitchen — the per-line "Prepared" toggle. */
+  onTogglePrepared?: (kot: LiveKot, item: KotItem) => void;
 }) {
   const meta = STATUS_META[kot.status];
   const count = itemCount(kot);
+  // Once the ticket is done there's nothing left to plate.
+  const canPlate = onTogglePrepared && kot.status !== "completed";
+  const prepared = kot.preparedLineIds ?? [];
   return (
     <View style={[styles.round, round > 0 && styles.roundAdditional]}>
       <View style={styles.roundHeader}>
@@ -416,6 +444,12 @@ function RoundSection({
               ? () => onRemoveItem(kot, item)
               : undefined
           }
+          prepared={prepared.includes(item.lineId)}
+          onTogglePrepared={
+            canPlate && !item.voided
+              ? () => onTogglePrepared!(kot, item)
+              : undefined
+          }
         />
       ))}
     </View>
@@ -426,10 +460,16 @@ function ItemLine({
   item,
   removing,
   onRemove,
+  prepared,
+  onTogglePrepared,
 }: {
   item: KotItem;
   removing: boolean;
   onRemove?: () => void;
+  /** Whether this line has been ticked off as plated (kitchen only). */
+  prepared: boolean;
+  /** Present only for the kitchen on active tickets. */
+  onTogglePrepared?: () => void;
 }) {
   const notes = (item.notes ?? "")
     .split("\n")
@@ -445,6 +485,32 @@ function ItemLine({
           {item.name}
         </Text>
         {item.voided && <Text style={styles.voidTag}>VOID</Text>}
+        {onTogglePrepared && (
+          <Pressable
+            onPress={onTogglePrepared}
+            accessibilityRole="button"
+            accessibilityState={{ selected: prepared }}
+            accessibilityLabel={
+              prepared
+                ? `Mark ${item.name} not ready`
+                : `Mark ${item.name} ready`
+            }
+            style={({ pressed }) => [
+              styles.prepBtn,
+              prepared ? styles.prepBtnOn : styles.prepBtnOff,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text
+              style={[
+                styles.prepText,
+                prepared ? styles.prepTextOn : styles.prepTextOff,
+              ]}
+            >
+              {prepared ? "✓ Ready" : "Preparing"}
+            </Text>
+          </Pressable>
+        )}
         {onRemove && (
           <Pressable
             hitSlop={8}
@@ -664,6 +730,31 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontFamily: fonts.extrabold,
     color: colors.danger,
+  },
+  // Per-line plating toggle: red until the dish is up, then green.
+  prepBtn: {
+    minWidth: 80,
+    paddingHorizontal: space.s3,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    alignItems: "center",
+  },
+  prepBtnOff: {
+    backgroundColor: colors.statusRed,
+  },
+  prepBtnOn: {
+    backgroundColor: colors.statusGreen,
+  },
+  prepText: {
+    fontSize: 12,
+    fontFamily: fonts.extrabold,
+    letterSpacing: 0.3,
+  },
+  prepTextOff: {
+    color: colors.textInverse,
+  },
+  prepTextOn: {
+    color: colors.textInverse,
   },
   noteLine: {
     marginLeft: 28 + space.s2,

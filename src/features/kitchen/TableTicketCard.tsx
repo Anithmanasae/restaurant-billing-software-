@@ -60,11 +60,16 @@ export const TableTicketCard = memo(function TableTicketCard({
   onPress: (key: string) => void;
 }) {
   const additional = hasAdditionalRound(group);
+  // Counter orders (takeaway/delivery) carry the orange status color to match
+  // the TAKEAWAY tab; dine-in first rounds stay red.
+  const isTakeaway = group.tickets[0].orderType !== "dine-in";
   const accent = group.completed
     ? colors.statusGreen
     : additional
       ? colors.statusIndigo
-      : colors.statusRed;
+      : isTakeaway
+        ? colors.statusOrange
+        : colors.statusRed;
 
   const first = group.tickets[0];
 

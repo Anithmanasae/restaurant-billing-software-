@@ -244,6 +244,13 @@ export interface Kot {
   status: KotStatus;
   printedCount: number;
   /**
+   * Line ids (KotItem.lineId) the kitchen has ticked off as plated. Lets the
+   * kitchen collect a big order onto the tray item-by-item as each dish comes
+   * up, instead of waiting for the whole ticket. Absent/empty = nothing plated
+   * yet. Only the kitchen/cashier toggle this; it never affects the bill.
+   */
+  preparedLineIds?: string[];
+  /**
    * Expo push token of the device that fired this ticket (the attending
    * waiter, or the cashier for counter orders). The KDS pushes kitchen
    * progress straight to it — no server needed. Null when the sender had

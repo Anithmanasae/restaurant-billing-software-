@@ -1,18 +1,25 @@
 /**
  * Kitchen Display (KDS) — Firestore write helpers.
  *
- * The kitchen and cashier roles may ONLY change `status` and `printedCount`
- * (plus the `updatedAt` bookkeeping field). This is enforced server-side by
- * `firestore.rules`:
+ * The kitchen and cashier roles may ONLY change `status`, `printedCount`, or
+ * `preparedLineIds` (plus the `updatedAt` bookkeeping field). This is enforced
+ * server-side by `firestore.rules`:
  *
  *   hasAnyRole(['kitchen', 'cashier']) && incomingDiffers(['status', 'printedCount', 'updatedAt'])
+ *   hasAnyRole(['kitchen', 'cashier']) && incomingDiffers(['preparedLineIds', 'updatedAt'])
  *
  * so every update below touches *only* those keys — never items, prices, etc.
  * One exception: the CASHIER may void a line (see voidKotItem) — the rules
  * carry a matching cashier-only branch for `items`.
  * All writes go through `paths.kot(id)`; no component builds a path by hand.
  */
-import { runTransaction, updateDoc, serverTimestamp } from "firebase/firestore";
+import {
+  arrayRemove,
+  arrayUnion,
+  runTransaction,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { paths } from "@/lib/firestore/paths";
 import { computeBill } from "@/lib/money";
@@ -46,6 +53,24 @@ export async function completeKot(kotId: string): Promise<void> {
 export async function reprintKot(kot: Pick<Kot, "id" | "printedCount">): Promise<void> {
   await updateDoc(paths.kot(kot.id), {
     printedCount: (kot.printedCount ?? 0) + 1,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Tick a single line on a fired ticket on/off "plated" (kitchen collecting a
+ * big order onto the tray dish-by-dish). Toggles the lineId in the kot's
+ * `preparedLineIds` array — an atomic arrayUnion/arrayRemove, so two lines
+ * ticked at once never clobber each other. Touches only preparedLineIds +
+ * updatedAt, matching the kitchen/cashier write path in firestore.rules.
+ */
+export async function setLinePrepared(
+  kotId: string,
+  lineId: string,
+  prepared: boolean
+): Promise<void> {
+  await updateDoc(paths.kot(kotId), {
+    preparedLineIds: prepared ? arrayUnion(lineId) : arrayRemove(lineId),
     updatedAt: serverTimestamp(),
   });
 }
