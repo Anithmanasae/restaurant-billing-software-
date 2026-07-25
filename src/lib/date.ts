@@ -41,14 +41,25 @@ export function agoLabel(ms: number): string {
   return m === 0 ? `${h}h ago` : `${h}h ${m}m ago`;
 }
 
-/** Compact duration label: "just now" / "5m" / "1h 20m". */
+/**
+ * Compact duration label: "just now" / "5m" / "1h 20m" / "3d 21h".
+ *
+ * Rolls over to days past 24h. A table left open over a weekend read as
+ * "93h 27m" — both harder to parse at a glance and wide enough to burst the
+ * floor-grid tile it sits in.
+ */
 export function shortElapsedLabel(ms: number): string {
   const mins = Math.floor(ms / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  const totalH = Math.floor(mins / 60);
+  if (totalH < 24) {
+    const m = mins % 60;
+    return m === 0 ? `${totalH}h` : `${totalH}h ${m}m`;
+  }
+  const d = Math.floor(totalH / 24);
+  const h = totalH % 24;
+  return h === 0 ? `${d}d` : `${d}d ${h}h`;
 }
 
 /** Live ticket timer: "45s" / "12m 30s" / "1h 20m". Ticks every second. */

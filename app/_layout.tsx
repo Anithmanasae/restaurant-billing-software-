@@ -11,6 +11,9 @@ import {
   PlusJakartaSans_700Bold,
   PlusJakartaSans_800ExtraBold,
 } from "@expo-google-fonts/plus-jakarta-sans";
+// Clamps the OS font multiplier app-wide (side-effect import — must run before
+// the first Text renders). See src/theme/textScaling.ts for why.
+import "@/theme/textScaling";
 import { AuthProvider } from "@/features/auth/AuthContext";
 import { SettingsProvider } from "@/features/settings/SettingsContext";
 import { ErrorBoundary } from "@/components/ErrorBoundary";

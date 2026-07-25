@@ -3,9 +3,10 @@
  *
  * Presentation only: it renders a table's status/total/elapsed and reports
  * taps back through `onPress`. No writes, no navigation decisions — the screen
- * owns all of that. Every card is the same height with the same internal
- * layout (free tables show `₹ --` / `-- m` placeholders) so the grid stays
- * strictly symmetric.
+ * owns all of that. Every card has the same internal layout (free tables show
+ * `₹ --` / `-- m` placeholders) and the same minimum height, so the grid stays
+ * symmetric; the total/timer row is the one part allowed to grow a second line
+ * rather than let long values collide.
  */
 import { memo, useCallback, useRef } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
@@ -97,9 +98,17 @@ export const TableCard = memo(function TableCard({
           )}
         </View>
 
-        {/* Always rendered — placeholders keep every card the same height. */}
+        {/* Always rendered — placeholders keep every card the same height.
+            Total and timer are both unbounded (a four-figure bill, a table
+            left open overnight), and at a raised device font scale they used
+            to run into each other and out past the tile's padding. The row
+            wraps instead: they share a line when they fit, and the timer drops
+            below the total when they don't. */}
         <View style={styles.metaRow}>
-          <Text style={[styles.total, !showOrder && styles.metaPlaceholder]}>
+          <Text
+            style={[styles.total, !showOrder && styles.metaPlaceholder]}
+            numberOfLines={1}
+          >
             {showOrder ? formatMoney(order!.subtotal) : "₹ --"}
           </Text>
           {showOrder && order!.createdAt ? (
@@ -108,9 +117,15 @@ export const TableCard = memo(function TableCard({
               format={shortElapsedLabel}
               intervalMs={30000}
               style={styles.elapsed}
+              numberOfLines={1}
             />
           ) : (
-            <Text style={[styles.elapsed, styles.metaPlaceholder]}>-- m</Text>
+            <Text
+              style={[styles.elapsed, styles.metaPlaceholder]}
+              numberOfLines={1}
+            >
+              -- m
+            </Text>
           )}
         </View>
       </Animated.View>
@@ -149,11 +164,17 @@ const styles = StyleSheet.create({
 
   metaRow: {
     flexDirection: "row",
+    // Wrap + gap, never a bare space-between: the gap guarantees breathing
+    // room on one line, the wrap catches the case where one line is not enough.
+    flexWrap: "wrap",
     justifyContent: "space-between",
     alignItems: "flex-end",
+    columnGap: space.s2,
+    rowGap: space.s1,
     marginTop: space.s3,
   },
   total: {
+    flexShrink: 1,
     fontFamily: fonts.bold,
     fontSize: 16,
     color: colors.text,

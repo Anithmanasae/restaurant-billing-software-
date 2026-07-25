@@ -44,6 +44,34 @@ screens are being rebuilt in React Native.
 - Safe areas: wrap screen content with `useSafeAreaInsets` or
   `SafeAreaView` from `react-native-safe-area-context`.
 
+## Text never fits — assume it doesn't
+
+Every layout has to survive text that is wider than you drew it. Two things
+make this bite on a client's phone and not on your dev device:
+
+1. **The OS font scale.** Android's Font size / Display size settings enlarge
+   every `Text`. `src/theme/textScaling.ts` clamps the multiplier to
+   `MAX_FONT_SCALE` (1.25) app-wide, so budget for content **25% wider** than
+   what you see at 1.0×. Don't undo the cap per-node.
+2. **Unbounded values.** Money and durations grow: `₹9,486.00`, `3d 21h`,
+   a 30-character dish name.
+
+So, for any row that pairs two pieces of text (value + label, name + price,
+title + timer):
+
+- **Never a bare `flexDirection: "row"` + `justifyContent: "space-between"`.**
+  Space-between only looks like spacing while the content fits; on overflow the
+  two texts butt together and spill past the padding.
+- Add `columnGap`/`gap` (real breathing room), `flexShrink: 1` on the side
+  that may give way, and `numberOfLines` so nothing silently reflows into the
+  neighbouring row.
+- In a narrow tile (2-column grids), also `flexWrap: "wrap"` + `rowGap` so the
+  smaller value drops to its own line instead of colliding. See
+  `TableCard.metaRow` and `OrderMenuCard.priceRow`.
+- Before shipping an APK, sanity-check the dense screens (Tables, KDS, Order)
+  with **Settings → Display → Font size turned up** — that is the state the
+  restaurant's phones are actually in.
+
 ## Folder structure
 
 ```

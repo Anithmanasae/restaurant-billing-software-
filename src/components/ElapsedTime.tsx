@@ -43,6 +43,7 @@ function ElapsedTimeImpl({
   format = agoLabel,
   intervalMs = 1000,
   style,
+  numberOfLines,
   alertAfterMs,
   alertStyle,
 }: {
@@ -52,6 +53,8 @@ function ElapsedTimeImpl({
   /** Tick granularity; coarse labels can use 30000 to tick less often. */
   intervalMs?: number;
   style?: StyleProp<TextStyle>;
+  /** Clamp the label to N lines — pass 1 inside tight card rows. */
+  numberOfLines?: number;
   /** Once elapsed ≥ this, merge `alertStyle` over `style` (overdue tickets). */
   alertAfterMs?: number;
   alertStyle?: StyleProp<TextStyle>;
@@ -80,7 +83,9 @@ function ElapsedTimeImpl({
   }, [createdAt, format, intervalMs, alertAfterMs]);
 
   return (
-    <Text style={[style, state.alert && alertStyle]}>{state.label}</Text>
+    <Text style={[style, state.alert && alertStyle]} numberOfLines={numberOfLines}>
+      {state.label}
+    </Text>
   );
 }
 
