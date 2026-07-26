@@ -6,17 +6,20 @@
  * pill, fire time, elapsed and reprint count, the FULL item list with notes
  * and voided lines, and the same Start / Ready / Completed group actions.
  *
- * KITCHEN ONLY: each un-voided line on an active ticket gets a Prepared toggle
- * — red until the dish is up, green once tapped — so a big order can be
+ * KITCHEN + CASHIER: each un-voided line on an active ticket gets a Prepared
+ * toggle — red until the dish is up, green once tapped — so a big order can be
  * gathered onto the tray dish-by-dish as each item comes off the pass. It only
  * flips `preparedLineIds` on the ticket; it never touches items or the bill.
+ * Both roles share one live flag: whichever side ticks a line off, the other
+ * sees it turn green.
  *
- * CASHIER ONLY: each un-voided line on an active ticket also gets a Remove
- * button — when the kitchen or a waiter asks for an item to come off a fired
- * order, only the cashier can void it (struck through on the ticket, dropped
- * from the bill). No other role ever sees the button. The cashier also gets a
- * ⋮ menu in the header whose Reprint re-fires EVERY round in one go, for when
- * the whole ticket has to be put back on the pass.
+ * CASHIER ONLY: each un-voided line on an active ticket ALSO gets a Remove
+ * button, sitting to the right of the Prepared toggle — when the kitchen or a
+ * waiter asks for an item to come off a fired order, only the cashier can void
+ * it (struck through on the ticket, dropped from the bill). No other role ever
+ * sees the button. The cashier also gets a ⋮ menu in the header whose Reprint
+ * re-fires EVERY round in one go, for when the whole ticket has to be put back
+ * on the pass.
  */
 import { useCallback, useState } from "react";
 import {
@@ -126,13 +129,15 @@ export function TicketDetailSheet({
   // too — only a cashier may write `items` on a kot.)
   const { role } = useAuth();
   const isCashier = role === "cashier";
-  const isKitchen = role === "kitchen";
+  // Plating toggle: the kitchen ticks lines off at the pass, and the cashier
+  // does the same from the counter when they're the one handing the tray over.
+  const canPlateLines = role === "kitchen" || isCashier;
   const [removingLineId, setRemovingLineId] = useState<string | null>(null);
 
-  // Kitchen ticks each line off as it comes up on the pass, so a big order can
-  // be gathered onto the tray dish-by-dish. Fire-and-forget: the button reflects
-  // the live `preparedLineIds` on the ticket, so a failed write simply snaps the
-  // line back to red. Kitchen only — the write path is gated in firestore.rules.
+  // One line ticked off as it comes up, so a big order can be gathered onto the
+  // tray dish-by-dish. Fire-and-forget: the button reflects the live
+  // `preparedLineIds` on the ticket, so a failed write simply snaps the line
+  // back to red. Kitchen + cashier only — gated server-side in firestore.rules.
   const onTogglePrepared = useCallback((kot: LiveKot, item: KotItem) => {
     tapFeedback();
     const next = !(kot.preparedLineIds ?? []).includes(item.lineId);
@@ -302,7 +307,7 @@ export function TicketDetailSheet({
                 round={round}
                 onRemoveItem={isCashier ? onRemoveItem : undefined}
                 removingLineId={removingLineId}
-                onTogglePrepared={isKitchen ? onTogglePrepared : undefined}
+                onTogglePrepared={canPlateLines ? onTogglePrepared : undefined}
               />
             ))}
           </ScrollView>
@@ -407,7 +412,7 @@ function RoundSection({
   /** Present only for the cashier — everyone else never sees Remove. */
   onRemoveItem?: (kot: LiveKot, item: KotItem) => void;
   removingLineId: string | null;
-  /** Present only for the kitchen — the per-line "Prepared" toggle. */
+  /** Present for kitchen + cashier — the per-line "Prepared" toggle. */
   onTogglePrepared?: (kot: LiveKot, item: KotItem) => void;
 }) {
   const meta = STATUS_META[kot.status];
@@ -466,15 +471,18 @@ function ItemLine({
   item: KotItem;
   removing: boolean;
   onRemove?: () => void;
-  /** Whether this line has been ticked off as plated (kitchen only). */
+  /** Whether this line has been ticked off as plated. */
   prepared: boolean;
-  /** Present only for the kitchen on active tickets. */
+  /** Present for kitchen + cashier on active tickets. */
   onTogglePrepared?: () => void;
 }) {
   const notes = (item.notes ?? "")
     .split("\n")
     .map((n) => n.trim())
     .filter(Boolean);
+  // The cashier carries both buttons on one line, so the plating pill drops its
+  // even-column padding there — otherwise every dish name wraps to two lines.
+  const crowded = !!onTogglePrepared && !!onRemove;
   return (
     <View style={styles.itemBlock}>
       <View style={styles.itemRow}>
@@ -497,6 +505,7 @@ function ItemLine({
             }
             style={({ pressed }) => [
               styles.prepBtn,
+              crowded && styles.prepBtnCompact,
               prepared ? styles.prepBtnOn : styles.prepBtnOff,
               pressed && styles.pressed,
             ]}
@@ -738,6 +747,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: radius.pill,
     alignItems: "center",
+  },
+  // Cashier rows carry Remove as well — trade the even column for name width.
+  prepBtnCompact: {
+    minWidth: 0,
+    paddingHorizontal: space.s2,
   },
   prepBtnOff: {
     backgroundColor: colors.statusRed,
